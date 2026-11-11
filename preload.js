@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('exa', {
   cliBinInstall: () => ipcRenderer.invoke('clibin:install'),
   cliBinUninstall: () => ipcRenderer.invoke('clibin:uninstall'),
   notify: (req) => ipcRenderer.invoke('notify', req),
+  trustCheck: (dir) => ipcRenderer.invoke('trust:check', dir),
+  trustAdd: (dir) => ipcRenderer.invoke('trust:add', dir),
   updateState: () => ipcRenderer.invoke('update:state'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: () => ipcRenderer.invoke('update:install'),

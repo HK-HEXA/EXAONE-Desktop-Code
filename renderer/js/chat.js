@@ -1918,6 +1918,7 @@ async function chooseWorkspace() {
   if (S.conv.code && S.conv.messages.length) { toast('이미 시작한 세션의 작업 폴더는 바꿀 수 없습니다. 새 세션을 만드세요'); return false; }
   const dir = await exa.pickFolder(S.conv.workspace || S.settings.lastWorkspace || '');
   if (!dir) return false;
+  if (!(await ensureTrusted(dir))) return false;
   S.conv.workspace = dir;
   saveSettings(S.conv.code ? { lastCodeDir: dir } : { lastWorkspace: dir });
   if (S.conv.code) { loadCodeMemory(dir); watchLive(); }
@@ -2095,6 +2096,63 @@ function runSlash(text) {
   return true;
 }
 
+/**
+ * 폴더 신뢰 확인: 처음 쓰는 작업 폴더면 "이 폴더를 신뢰하나요?" 를 먼저 묻는다 (터미널 EXAONE Code 와 같은 목록).
+ * 신뢰한 폴더와 그 하위 폴더는 다시 묻지 않는다. 홈 폴더 자체는 저장하지 않고 앱을 켜 둔 동안만 기억한다.
+ */
+async function ensureTrusted(dir) {
+  if (!dir) return true;
+  S.trusted = S.trusted || new Set();
+  if (S.trusted.has(dir)) return true;
+  if (await exa.trustCheck(dir)) { S.trusted.add(dir); return true; }
+  const ok = await new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; m.close(); resolve(v); };
+    const p = (text) => h('p', { class: 'confirm-msg', text });
+    const m = openModal({
+      title: '작업 폴더 접근',
+      body: h('div', null,
+        h('p', { class: 'confirm-msg' }, h('code', { text: dir })),
+        p('간단한 안전 확인: 직접 만들었거나 신뢰하는 프로젝트인가요? (본인의 코드, 잘 알려진 오픈소스 프로젝트, 팀의 작업물 등) 그렇지 않다면 먼저 이 폴더에 무엇이 있는지 확인해 보세요.'),
+        p('EXAONE 이 이 폴더의 파일을 읽고, 수정하고, 실행할 수 있게 됩니다.')),
+      footer: [
+        h('button', { class: 'btn', onclick: () => finish(false) }, '아니요'),
+        h('button', { class: 'btn primary', onclick: () => finish(true) }, '예, 이 폴더를 신뢰합니다'),
+      ],
+      onClose: () => { if (!done) { done = true; resolve(false); } },
+    });
+  });
+  if (!ok) return false;
+  await exa.trustAdd(dir);
+  S.trusted.add(dir);
+  return true;
+}
+
+/**
+ * 전체 자동(모든 권한 허용) 경고. 앱을 켠 뒤 처음 켤 때(또는 그 상태로 처음 작업을 보낼 때) 한 번만 묻는다.
+ * Claude Code 의 권한 확인 건너뛰기 경고와 같은 동작. 동의하면 true.
+ */
+function confirmAutoApproval() {
+  if (S.autoOk) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; if (v) S.autoOk = true; m.close(); resolve(v); };
+    const p = (text) => h('p', { class: 'confirm-msg', text });
+    const m = openModal({
+      title: '경고: 전체 자동 모드',
+      body: h('div', null,
+        p('이 모드에서는 위험할 수 있는 명령을 실행하기 전에도 EXAONE 이 승인을 묻지 않습니다. 파일 작성·수정, 셸 명령, 웹 요청이 모두 바로 실행됩니다.'),
+        p('인터넷 접근이 제한되어 있고, 망가져도 쉽게 되돌릴 수 있는 샌드박스 컨테이너나 가상 머신에서만 쓰세요.'),
+        p('계속하면 이 모드에서 일어나는 모든 작업의 책임은 사용자에게 있습니다.')),
+      footer: [
+        h('button', { class: 'btn', onclick: () => finish(false) }, '아니요'),
+        h('button', { class: 'btn danger', onclick: () => finish(true) }, '예, 동의합니다'),
+      ],
+      onClose: () => { if (!done) { done = true; resolve(false); } },
+    });
+  });
+}
+
 async function send() {
   if (S.busy) return;
   if (S.remote) { toast('터미널에서 작업 중입니다. 끝난 뒤에 보낼 수 있습니다'); return; }
@@ -2116,6 +2174,10 @@ async function send() {
     toast(conv.code ? 'EXAONE Code 는 작업 폴더를 먼저 골라야 합니다' : '에이전트 방식에서는 작업 폴더를 먼저 골라야 합니다');
     if (!await chooseWorkspace()) return;
   }
+  // 처음 쓰는 작업 폴더면 신뢰 확인부터.
+  if ((conv.mode === 'agent' || conv.code) && conv.workspace && !(await ensureTrusted(conv.workspace))) { toast('폴더를 신뢰해야 이 폴더에서 작업할 수 있습니다'); return; }
+  // 전체 자동 상태로 이번 실행에서 처음 작업을 보낼 때는 경고부터.
+  if ((conv.mode === 'agent' || conv.code) && S.settings.agent.approval === 'auto' && !(await confirmAutoApproval())) return;
   // Code 세션: 터미널에서 그 사이에 이어 쓴 내용이 있으면 먼저 불러온다.
   if (conv.code && await syncCodeConv()) toast('터미널에서 이어 쓴 내용을 불러왔습니다');
   const m = { id: uid('m'), role: 'user', content: text, attachments: S.attachments.splice(0), ts: Date.now() };

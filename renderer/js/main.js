@@ -153,7 +153,10 @@
   });
   $('#btn-approval').addEventListener('click', (e) => popupMenu(e.currentTarget, Object.entries(APPROVALS).map(([k, v]) => ({
     icon: v.icon, label: v.label, desc: v.desc, active: S.settings.agent.approval === k,
-    onClick: () => { saveSettings({ agent: { approval: k } }); renderChips(); renderToolsPanel(); },
+    onClick: async () => {
+      if (k === 'auto' && !(await confirmAutoApproval())) return;
+      saveSettings({ agent: { approval: k } }); renderChips(); renderToolsPanel();
+    },
   })).concat(['-', { icon: 'sliders', label: '에이전트 설정…', onClick: () => openSettings('agent') }]), { title: '도구 실행 승인' }));
 
   // ----- 메시지 영역 -----

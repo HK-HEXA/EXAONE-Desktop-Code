@@ -814,7 +814,33 @@ class App {
   cycleMode() {
     const order = ['default', 'acceptEdits', 'plan'].concat(this.opt.allowBypass ? ['bypassPermissions'] : []);
     const i = order.indexOf(this.agent.mode);
-    this.agent.cfg.mode = order[(i + 1) % order.length];
+    const next = order[(i + 1) % order.length];
+    if (next !== 'bypassPermissions' || this.bypassOk) { this.agent.cfg.mode = next; return; }
+    // 이 세션에서 처음 권한 확인 건너뛰기로 넘어갈 때는 경고를 먼저 보여 준다. 거절하면 건너뛰고 기본 모드로.
+    this.confirmBypass(false).then((ok) => { this.agent.cfg.mode = ok ? 'bypassPermissions' : 'default'; this.render(); });
+  }
+
+  /**
+   * 권한 확인 건너뛰기(모든 권한 허용) 경고. 이 세션에서 처음 켤 때 한 번만 보여 준다 (Claude Code 와 같은 동작).
+   * atStart 면 거절 시 종료, 아니면 false 를 돌려준다.
+   */
+  async confirmBypass(atStart) {
+    if (this.bypassOk) return true;
+    const v = await this.select({
+      title: c.red(c.bold('경고: EXAONE Code 가 권한 확인 건너뛰기 모드로 실행됩니다')), color: c.red,
+      lines: [
+        '이 모드에서는 위험할 수 있는 명령을 실행하기 전에도 EXAONE Code 가 승인을 묻지 않습니다. 파일 작성·수정, 셸 명령, 웹 요청이 모두 바로 실행됩니다.',
+        '',
+        '인터넷 접근이 제한되어 있고, 망가져도 쉽게 되돌릴 수 있는 샌드박스 컨테이너나 가상 머신에서만 쓰세요.',
+        '',
+        '계속하면 이 모드에서 일어나는 모든 작업의 책임은 사용자에게 있습니다.',
+      ],
+      options: [{ label: atStart ? '아니요, 종료' : '아니요, 켜지 않기' }, { label: '예, 동의합니다' }],
+      cancel: 0,
+    });
+    if (v === 1) { this.bypassOk = true; return true; }
+    if (atStart) this.exit(0);
+    return false;
   }
 
   toggleVerbose() {
@@ -1297,7 +1323,7 @@ class App {
         const modes = ['default', 'acceptEdits', 'plan'].concat(app.opt.allowBypass ? ['bypassPermissions'] : []);
         const labels = { default: '기본 — 편집·명령·웹 요청마다 확인', acceptEdits: '편집 자동 허용 — 명령·웹 요청만 확인', plan: '계획 모드 — 읽기만 하고 계획부터', bypassPermissions: '권한 확인 건너뛰기' };
         const v = await app.select({ title: `권한 (현재: ${agent().mode})`, lines, options: modes.map((m) => ({ label: labels[m] })), cancel: -1 });
-        if (v >= 0) agent().cfg.mode = modes[v];
+        if (v >= 0 && (modes[v] !== 'bypassPermissions' || await app.confirmBypass(false))) agent().cfg.mode = modes[v];
       } },
       { name: '/plan', desc: '계획 모드 켜기·끄기', run() { agent().cfg.mode = agent().mode === 'plan' ? 'default' : 'plan'; info([agent().mode === 'plan' ? c.plan('⏸ 계획 모드: 읽기만 하고, 계획을 세운 뒤 승인을 받습니다') : '계획 모드를 껐습니다']); } },
       { name: '/resume', desc: '이전 세션 이어서 하기 (터미널 세션 · 데스크톱 앱의 작업)', async run() {
@@ -1437,6 +1463,13 @@ class App {
       this.screen.anchor = true;
       if (v !== 1) return this.exit(0);
       store.trustFolder(this.cwd);
+      this.clearScreen();
+    }
+    // 모든 권한을 허용한 채(-y · 기본 모드 설정) 시작하면 경고부터 보여 준다.
+    if (this.agent.mode === 'bypassPermissions') {
+      this.screen.anchor = false;
+      await this.confirmBypass(true);
+      this.screen.anchor = true;
       this.clearScreen();
     }
     this.banner();

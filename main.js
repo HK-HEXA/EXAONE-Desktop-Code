@@ -558,6 +558,9 @@ function registerIpc() {
   ipcMain.handle('clibin:status', () => cliAct(() => cliInstall.status(cliCtx())));
   ipcMain.handle('clibin:install', () => cliAct(() => cliInstall.install(cliCtx())));
   ipcMain.handle('clibin:uninstall', () => cliAct(() => cliInstall.uninstall(cliCtx())));
+  // 폴더 신뢰: 터미널(EXAONE Code)과 같은 목록(~/.exaone/trusted-folders.json)을 함께 쓴다.
+  ipcMain.handle('trust:check', (_e, dir) => { try { return cliStore.isTrusted(String(dir || '')); } catch { return false; } });
+  ipcMain.handle('trust:add', (_e, dir) => { try { return cliStore.trustFolder(String(dir || '')); } catch { return false; } });
   ipcMain.handle('update:state', () => updater.getState());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:install', () => installUpdate());

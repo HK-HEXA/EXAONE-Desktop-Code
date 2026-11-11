@@ -1285,7 +1285,10 @@ function settingsSection(id, refresh) {
     const catLabel = { read: '읽기', write: '쓰기', exec: '실행', net: '네트워크' };
     return [
       rowField('추론 강도 (에이전트)', select(Object.entries(EFFORTS).map(([k, v]) => [k, `${v.label} (${k})`]), EFFORTS[a.reasoning_effort] ? a.reasoning_effort : 'medium', (v) => setA({ reasoning_effort: v })), '단계마다 다시 추론하므로 채팅보다 낮게 둡니다'),
-      rowField('승인 방식', select(Object.entries(APPROVALS).map(([k, v]) => [k, v.label]), a.approval, (v) => setA({ approval: v })), '읽기 전용 · 쓰기/명령/웹은 매번 확인 · 확인 없이 실행'),
+      rowField('승인 방식', select(Object.entries(APPROVALS).map(([k, v]) => [k, v.label]), a.approval, async (v) => {
+        if (v === 'auto' && !(await confirmAutoApproval())) return refresh();
+        setA({ approval: v });
+      }), '읽기 전용 · 쓰기/명령/웹은 매번 확인 · 확인 없이 실행'),
       rowField('tool_choice', select([['auto', 'auto — 모델이 결정'], ['required', 'required — 반드시 호출'], ['none', 'none — 호출 금지']], a.toolChoice || 'auto', (v) => setA({ toolChoice: v }))),
       rowField('최대 단계 수', numInput(a.maxSteps, 1, 200, (v) => setA({ maxSteps: v })), '한 번의 지시로 반복할 요청 수'),
       rowField('명령 제한 시간 (초)', numInput(a.commandTimeout, 5, 600, (v) => setA({ commandTimeout: v }))),
