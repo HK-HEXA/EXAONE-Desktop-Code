@@ -5,6 +5,9 @@ LG AI연구원 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위�
 - **EXAONE Desktop** — Electron 데스크톱 앱. EXAONE 공식 Showroom의 워드마크와 흰색·차콜·라벤더 색상을 적용했습니다.
 - **EXAONE Code** — 터미널에서 쓰는 에이전트(`exaone` 명령). 같은 API 클라이언트와 도구를 쓰며, EXAONE Code 이름과 라벤더 포인트를 사용합니다.
 
+> **비영리 · 퍼블릭 도메인** — 이 프로그램으로 수익을 창출하지 않습니다. 판매·유료 서비스·광고 등 어떤 수익 활동에도 쓰지 않는 개인 테스트용 도구입니다.
+> 코드는 [Unlicense](LICENSE)로 공개하며 저작권을 주장하지 않습니다. 누구나 제한 없이 복사·수정·배포할 수 있습니다.
+
 ## 다운로드
 
 | 운영체제 | 받기 |
@@ -14,6 +17,7 @@ LG AI연구원 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위�
 - 설치 파일 하나로 데스크톱 앱이 설치됩니다. Node.js 를 따로 설치할 필요가 없습니다.
 - 터미널에서 쓰는 **EXAONE Code** 는 앱 안에서 설치합니다: **설정 → EXAONE Code → 설치**. 새로 여는 터미널부터 어느 폴더에서나 `exaone` 을 쓸 수 있습니다.
 - 서명하지 않은 설치 파일이라 Windows 가 "PC 보호" 경고를 띄울 수 있습니다. **추가 정보 → 실행** 을 누르면 설치됩니다.
+- 한 번 설치하면 이후 버전은 앱이 알아서 받습니다 (아래 "자동 업데이트"). 0.8.x 에서는 0.9.0 을 한 번 직접 설치해야 합니다.
 - macOS · Linux 용 설치 파일은 아직 제공하지 않습니다. 아래 "소스에서 실행" 으로 쓸 수 있습니다.
 
 ## 소스에서 실행
@@ -43,15 +47,35 @@ Node.js 22.12 이상이 필요합니다.
 - **데스크톱 앱**: 시스템 알림 + 작업 표시줄 깜박임. 기본은 창이 뒤에 있을 때만이고, 설정 → 일반 → 알림에서 "항상" 이나 "끄기" 로 바꿉니다. 알림을 누르면 그 대화가 열립니다.
 - **터미널**: 벨 + 시스템 알림. 터미널 창이 앞에 있으면 알리지 않습니다. 창의 포커스를 알려 주지 않는 터미널에서는 10초 넘게 걸린 작업이 끝났을 때와, 질문 · 권한 확인에 6초 동안 답이 없을 때 알립니다. `/config` 에서 끕니다 (또는 환경 변수 `EXAONE_NOTIFY=0`).
 
+### 트레이
+
+창의 **X** 를 눌러도 종료되지 않고 시스템 트레이(작업 표시줄 오른쪽 아이콘)로 숨겨집니다. 진행 중인 작업도 계속됩니다.
+
+- 트레이 아이콘을 클릭하거나 더블클릭하면 창이 다시 열립니다. 앱을 다시 실행해도 숨겨진 창이 열립니다.
+- 완전히 끄려면 트레이 아이콘 우클릭 → **종료**.
+
+### 자동 업데이트 (Windows 설치판)
+
+- 시작 10초 뒤와 4시간마다 GitHub Release 에서 새 버전을 확인하고, 있으면 백그라운드로 받아 둡니다.
+- 다 받으면 사이드바 아래에 **재시작하여 업데이트** 버튼이 뜹니다 (트레이 메뉴에도 같은 항목). 누르지 않으면 다음에 앱을 종료할 때 설치됩니다.
+- 설정 → 정보, 또는 트레이 메뉴의 **업데이트 확인** 으로 바로 확인할 수 있습니다.
+- 소스에서 실행(`npm start`)할 때와 macOS · Linux 에서는 동작하지 않습니다.
+
 ## 배포 (Windows 설치 파일 만들기)
 
 `v` 로 시작하는 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 Windows 설치 파일을 빌드해 그 태그의 Release 에 올립니다.
 
 ```
-# package.json 의 version 을 올린 뒤
-git tag v0.8.0
-git push origin main v0.8.0
+npm version 0.9.1 --no-git-tag-version
+git add -A
+git commit -m "v0.9.1: ..."
+git push origin main
+git tag v0.9.1
+git push origin v0.9.1
 ```
+
+- Release 에는 `EXAONE-Desktop-Setup.exe` 와 함께 `latest.yml` · `EXAONE-Desktop-Setup.exe.blockmap` 이 올라갑니다. 설치된 앱의 자동 업데이트가 이 두 파일로 새 버전을 찾고 받으므로 지우지 마세요.
+- 초안(draft) · 시험판(pre-release) Release 는 자동 업데이트 대상이 아닙니다.
 
 - 태그와 `package.json` 의 버전이 다르면 빌드를 멈춥니다.
 - Actions 탭의 **Release (Windows) → Run workflow** 로 직접 돌릴 수도 있습니다. 태그를 비우면 빌드만 해서 산출물(Artifacts)로 남깁니다.
@@ -202,7 +226,7 @@ Claude Code 에 있지만 넣지 않은 것: MCP 서버 연결, 훅, 하위 에�
 ## 구조
 
 ```
-main.js              Electron 메인: 창, IPC, 키 관리, 미리보기용 파일 스킴, 로그 저장
+main.js              Electron 메인: 창, 트레이, IPC, 키 관리, 미리보기용 파일 스킴, 로그 저장
 preload.js           화면에 노출하는 API (contextBridge)
 src/exaone.js        API 클라이언트 (SSE 파싱, 스트림 진단, Tabular multipart)
 src/tools.js         에이전트 도구 구현
@@ -211,6 +235,7 @@ src/store.js         설정·대화 저장
 src/sessions.js      터미널 세션 ↔ 앱 대화 변환, Code 탭의 세션 읽기·쓰기
 src/live.js          실시간 연동 (작업 중인 내용을 <세션>.live 로 주고받기)
 src/cliInstall.js    터미널 명령(exaone) 설치 · 제거 (런처 만들기, PATH 등록)
+src/updater.js       자동 업데이트 (Windows 설치판, electron-updater · GitHub Release)
 cli/notify.js        터미널 알림 (벨 · 시스템 알림 · 포커스 확인)
 .github/workflows/   Windows 설치 파일 빌드 · Release
 renderer/js/retry.js 실패한 요청을 다시 보내는 규칙 (앱 · 터미널 공용)
@@ -220,3 +245,11 @@ renderer/vendor/     marked, DOMPurify, highlight.js, KaTeX (오프라인 동작
 ```
 
 대화·설정·파일 버전 기록은 `%APPDATA%\EXAONE Desktop` 에 저장됩니다(설정 → 데이터).
+
+## 라이선스
+
+[Unlicense](LICENSE) — 퍼블릭 도메인. 저작권을 주장하지 않으며 누구나 어떤 목적으로든 자유롭게 쓸 수 있습니다. 아무런 보증 없이 "있는 그대로" 제공합니다.
+
+- 이 프로그램은 수익 창출을 하지 않습니다 (판매 · 유료 서비스 · 광고 없음).
+- EXAONE 이름과 워드마크는 LG AI연구원의 것이며 위 라이선스에 포함되지 않습니다. 이 프로젝트는 LG AI연구원과 관계없는 개인 테스트용 클라이언트입니다.
+- API 사용에는 EXAONE API 이용 약관이 적용됩니다.

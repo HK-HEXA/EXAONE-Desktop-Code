@@ -23,6 +23,7 @@
     "electron-builder": "^26.0.12"
   },
   "author": "HK-HEXA",
+  "license": "Unlicense",
   "repository": {
     "type": "git",
     "url": "https://github.com/HK-HEXA/EXAONE-Desktop-Code.git"
@@ -46,6 +47,7 @@
       "main.js",
       "preload.js",
       "package.json",
+      "LICENSE",
       "src/**/*",
       "cli/**/*",
       "renderer/**/*",
