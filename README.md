@@ -1,12 +1,48 @@
+<p align="center">
+  <picture>
+    <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/images/readme-brand-mobile-dark.svg">
+    <source media="(max-width: 600px)" srcset="docs/images/readme-brand-mobile-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-brand-dark.svg">
+    <img src="docs/images/readme-brand-light.svg" width="1040" alt="EXAONE Desktop과 EXAONE Code — 데스크톱 클라이언트와 터미널 에이전트">
+  </picture>
+</p>
+
 # EXAONE Desktop · EXAONE Code
 
-LG AI연구원 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위한 도구 두 가지입니다.
+**EXAONE을 데스크톱과 터미널에서.** 대화하고, 프로젝트를 관리하고, 코드 작업을 이어 갑니다.
 
-- **EXAONE Desktop** — Electron 데스크톱 앱. EXAONE 공식 Showroom의 워드마크와 흰색·차콜·라벤더 색상을 적용했습니다.
-- **EXAONE Code** — 터미널에서 쓰는 에이전트(`exaone` 명령). 같은 API 클라이언트와 도구를 쓰며, EXAONE Code 이름과 라벤더 포인트를 사용합니다.
+LG AI연구원의 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위한 개인 테스트용 클라이언트입니다.
+
+<p align="center">
+  <a href="#download"><strong>Windows 다운로드</strong></a> ·
+  <a href="#quick-start">빠른 시작</a> ·
+  <a href="#desktop">Desktop 안내</a> ·
+  <a href="#code">Code 안내</a> ·
+  <a href="#troubleshooting">문제 해결</a>
+</p>
+
+| EXAONE Desktop | EXAONE Code |
+|:---|:---|
+| 화면에서 대화와 에이전트 작업을 관리 | 터미널에서 파일·코드·명령 작업을 진행 |
+| 프로젝트 · 파일 미리보기 · 변경 사항 · Tabular 예측 | 폴더 메모리 · 권한 모드 · 세션 이어서 하기 · 파이프 출력 |
+| Electron 데스크톱 앱 | `exaone` 명령으로 실행 |
+
+앱의 **Code 탭과 터미널은 같은 세션 기록**을 사용하고, 등록한 API 키도 함께 씁니다.
 
 > **비영리 · 퍼블릭 도메인** — 이 프로그램으로 수익을 창출하지 않습니다. 판매·유료 서비스·광고 등 어떤 수익 활동에도 쓰지 않는 개인 테스트용 도구입니다.
 > 코드는 [Unlicense](LICENSE)로 공개하며 저작권을 주장하지 않습니다. 누구나 제한 없이 복사·수정·배포할 수 있습니다.
+
+<a id="quick-start"></a>
+
+## 빠른 시작
+
+1. **설치** — 아래 Windows 설치 파일을 받아 EXAONE Desktop을 설치합니다.
+2. **연결** — 앱 첫 실행 시 EXAONE API 토큰을 등록합니다. 나중에는 **설정 → 연결**에서 바꿀 수 있습니다.
+3. **시작** — 앱에서 대화를 시작하거나, **설정 → EXAONE Code → 설치** 후 새 터미널에서 `exaone`을 실행합니다.
+
+> 소스에서 실행하려면 **Node.js 22.12 이상**이 필요합니다. [소스 실행 안내](#from-source)를 참고하세요.
+
+<a id="download"></a>
 
 ## 다운로드
 
@@ -19,6 +55,8 @@ LG AI연구원 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위�
 - 서명하지 않은 설치 파일이라 Windows 가 "PC 보호" 경고를 띄울 수 있습니다. **추가 정보 → 실행** 을 누르면 설치됩니다.
 - 한 번 설치하면 이후 버전은 앱이 알아서 받습니다 (아래 "자동 업데이트"). 0.8.x 에서는 0.9.0 을 한 번 직접 설치해야 합니다.
 - macOS · Linux 용 설치 파일은 아직 제공하지 않습니다. 아래 "소스에서 실행" 으로 쓸 수 있습니다.
+
+<a id="from-source"></a>
 
 ## 소스에서 실행
 
@@ -61,27 +99,6 @@ Node.js 22.12 이상이 필요합니다.
 - 설정 → 정보, 또는 트레이 메뉴의 **업데이트 확인** 으로 바로 확인할 수 있습니다.
 - 소스에서 실행(`npm start`)할 때와 macOS · Linux 에서는 동작하지 않습니다.
 
-## 배포 (Windows 설치 파일 만들기)
-
-`v` 로 시작하는 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 Windows 설치 파일을 빌드해 그 태그의 Release 에 올립니다.
-
-```
-npm version 0.9.1 --no-git-tag-version
-git add -A
-git commit -m "v0.9.1: ..."
-git push origin main
-git tag v0.9.1
-git push origin v0.9.1
-```
-
-- Release 에는 `EXAONE-Desktop-Setup.exe` 와 함께 `latest.yml` · `EXAONE-Desktop-Setup.exe.blockmap` 이 올라갑니다. 설치된 앱의 자동 업데이트가 이 두 파일로 새 버전을 찾고 받으므로 지우지 마세요.
-- 초안(draft) · 시험판(pre-release) Release 는 자동 업데이트 대상이 아닙니다.
-
-- 태그와 `package.json` 의 버전이 다르면 빌드를 멈춥니다.
-- Actions 탭의 **Release (Windows) → Run workflow** 로 직접 돌릴 수도 있습니다. 태그를 비우면 빌드만 해서 산출물(Artifacts)로 남깁니다.
-- 직접 빌드: Windows 에서 `npm install` 후 `npm run dist` → `dist\EXAONE-Desktop-Setup.exe`. (Node 를 함께 넣으려면 빌드 전에 `runtime\node\node.exe` 를 두세요. 없으면 PC 의 Node 나 앱 자체로 실행합니다.)
-- macOS 빌드는 아직 구성하지 않았습니다.
-
 ## 토큰 (API 키) 등록
 
 **등록한 토큰만 씁니다.** 데스크톱 앱이나 터미널 어느 쪽에서든 한 번 등록하면 둘이 함께 씁니다.
@@ -90,6 +107,8 @@ git push origin v0.9.1
 - 터미널(EXAONE Code): 토큰이 없으면 시작할 때 "데스크톱 앱에서 등록 / 여기서 바로 입력" 을 고르게 합니다. 앱에서 등록을 고르면 앱의 등록 창을 띄우고, 등록될 때까지 기다렸다가 이어 갑니다. `/login` 으로 바꾸고 `/logout` 으로 지웁니다.
 - 저장 위치는 사용자 폴더의 `~/.exaone/key.txt` (Windows: `%USERPROFILE%\.exaone\key.txt`) 한 곳이며, 암호화하지 않은 텍스트 파일입니다. 화면 쪽 코드나 로그 파일에는 들어가지 않습니다.
 - 폴더에 둔 `key.txt` 나 환경 변수 `EXAONE_API_KEY` 는 **더 이상 읽지 않습니다.** (예전에 앱 설정에 저장해 둔 키가 있으면 처음 실행할 때 위 위치로 한 번 옮깁니다.)
+
+<a id="desktop"></a>
 
 ## EXAONE Desktop
 
@@ -124,6 +143,8 @@ git push origin v0.9.1
 ### 단축키
 
 `Enter` 전송 · `Shift+Enter` 줄바꿈 · `Esc` 중지 · `Ctrl+N` 새 대화(같은 프로젝트) · `Ctrl+Shift+N` 프로젝트 밖 새 대화 · `Ctrl+K` 검색 · `Ctrl+B` 사이드바 · `Ctrl+.` 오른쪽 패널 · `Ctrl+,` 설정 · `F12` 개발자 도구
+
+<a id="code"></a>
 
 ## EXAONE Code (터미널)
 
@@ -204,7 +225,7 @@ Claude Code 에 있지만 넣지 않은 것: MCP 서버 연결, 훅, 하위 에�
 - **요청 한도**: 계정 한도가 초당 1회라 요청 사이를 1.1초 띄웁니다.
 - **자동 다시 시도**: 네트워크 문제(연결 실패, 응답을 받는 도중 끊김)나 408·409·429·5xx 응답이면 Claude Code 와 같은 방식으로 다시 보냅니다 — 최대 10번, 0.5초에서 시작해 두 배씩(최대 32초) 간격을 늘리고, 서버가 `retry-after` 를 주면 그 시간을 따릅니다(60초를 넘으면 기다리지 않고 오류). 기다리는 동안 "API 오류 (연결 오류) · 4초 후 다시 시도… (시도 2/10)" 가 남은 시간과 함께 보이고, 중지(Esc)하면 바로 멈춥니다. 받다 만 답은 버리고 처음부터 다시 받습니다. 400·401 처럼 다시 보내도 소용없는 오류와, 완료 신호 없이 끝난 스트림(시간 제한)은 다시 시도하지 않습니다. 횟수는 터미널에서 `EXAONE_MAX_RETRIES`, 앱에서는 설정 파일의 `maxRetries` 로 바꿉니다(0 이면 끔). `exaone -p --output-format stream-json` 에서는 `system`/`api_retry` 이벤트로 알립니다.
 - **실시간 연동**: 앱의 Code 탭과 터미널이 같은 세션을 열어 두면, 한쪽에서 입력한 지시와 진행 중인 작업(생각, 답변 글자, 도구 실행)이 다른 쪽에 그대로 실시간으로 보입니다. 작업하는 쪽이 세션 파일 옆의 `<세션 id>.live` 에 일어나는 일을 적고 다른 쪽이 0.1초 간격으로 읽는 방식입니다. 한쪽이 작업 중일 때 다른 쪽에서는 보낼 수 없고(터미널은 대기열에 넣음), 중지(Esc / 중지 버튼)는 어느 쪽에서든 됩니다. `exaone -p` 로 돌린 작업도 앱에 실시간으로 보입니다.
-- **로고**: 앱 폴더의 `assets/logo.(svg|png|jpg|webp)` 또는 `~/.exaone/logo.*` 에 그림 파일을 두면 사이드바와 시작 화면의 "E" 표시 자리에 쓰입니다(png·jpg 는 창 아이콘에도). 파일이 없으면 Desktop은 차콜 E, Code는 공식 EXAONE 워드마크와 Code 이름을 표시합니다. 공식 EXAONE 워드마크는 라이트·다크 테마에 맞춰 표시되며, 기본 창 아이콘도 포함됩니다. 출처와 디자인 기준은 `assets/README.md`, `DESIGN.md`에 기록했습니다.
+- **로고**: 앱 폴더의 `assets/logo.(svg|png|jpg|webp)` 또는 `~/.exaone/logo.*` 에 그림 파일을 두면 사이드바와 시작 화면의 "E" 표시 자리에 쓰입니다(png·jpg 는 창 아이콘에도). 파일이 없으면 Desktop은 차콜 E, Code는 라벤더 터미널 심벌과 공식 EXAONE 워드마크·Code 이름을 표시합니다. 공식 EXAONE 워드마크는 라이트·다크 테마에 맞춰 표시되며, 기본 창 아이콘도 포함됩니다. 출처와 디자인 기준은 `assets/README.md`, `DESIGN.md`에 기록했습니다.
 - **추론 강도 기본값**: 채팅 `high`, 에이전트 `medium`(공식 에이전트 가이드의 예시 값). API 기본값은 `max` 입니다.
 - **응답이 끊기는 경우**: 스트림이 완료 신호(`finish_reason`) 없이 끝나면 조용히 넘어가지 않고 오류로 표시합니다. 추론 강도를 낮춰 다시 시도해 보세요.
 - **API 로그 파일**: 요청·응답 원문을 `logs/` 폴더에 JSON 으로 남깁니다(최근 40개, 설정 → 데이터에서 끌 수 있음). 프롬프트와 파일 내용이 들어가니 공유할 때 주의하세요.
@@ -212,6 +233,8 @@ Claude Code 에 있지만 넣지 않은 것: MCP 서버 연결, 훅, 하위 에�
 - **변경 사항 기록**은 에이전트의 파일 도구(write_file · edit_file)로 바꾼 내용만 추적합니다. 명령 실행으로 바뀐 파일은 다음에 그 파일을 고칠 때 "도구 밖 변경"으로 잡힙니다.
 - **HTML 미리보기**는 작업 폴더 전용 출처에서 스크립트를 실행합니다. 앱 화면이나 다른 폴더에는 접근할 수 없지만 네트워크 요청은 막지 않습니다.
 - 대화 제목은 요청 수를 아끼려고 모델을 부르지 않고 첫 메시지에서 잘라 만듭니다.
+
+<a id="troubleshooting"></a>
 
 ## 문제가 생기면
 
@@ -249,6 +272,34 @@ renderer/vendor/     marked, DOMPurify, highlight.js, KaTeX (오프라인 동작
 ```
 
 대화·설정·파일 버전 기록은 `%APPDATA%\EXAONE Desktop` 에 저장됩니다(설정 → 데이터).
+
+## 개발자 안내
+
+<details>
+<summary><strong>Windows 설치 파일 빌드와 GitHub Release 배포</strong></summary>
+
+### 배포 (Windows 설치 파일 만들기)
+
+`v` 로 시작하는 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 Windows 설치 파일을 빌드해 그 태그의 Release 에 올립니다.
+
+```
+npm version 0.9.1 --no-git-tag-version
+git add -A
+git commit -m "v0.9.1: ..."
+git push origin main
+git tag v0.9.1
+git push origin v0.9.1
+```
+
+- Release 에는 `EXAONE-Desktop-Setup.exe` 와 함께 `latest.yml` · `EXAONE-Desktop-Setup.exe.blockmap` 이 올라갑니다. 설치된 앱의 자동 업데이트가 이 두 파일로 새 버전을 찾고 받으므로 지우지 마세요.
+- 초안(draft) · 시험판(pre-release) Release 는 자동 업데이트 대상이 아닙니다.
+
+- 태그와 `package.json` 의 버전이 다르면 빌드를 멈춥니다.
+- Actions 탭의 **Release (Windows) → Run workflow** 로 직접 돌릴 수도 있습니다. 태그를 비우면 빌드만 해서 산출물(Artifacts)로 남깁니다.
+- 직접 빌드: Windows 에서 `npm install` 후 `npm run dist` → `dist\EXAONE-Desktop-Setup.exe`. (Node 를 함께 넣으려면 빌드 전에 `runtime\node\node.exe` 를 두세요. 없으면 PC 의 Node 나 앱 자체로 실행합니다.)
+- macOS 빌드는 아직 구성하지 않았습니다.
+
+</details>
 
 ## 라이선스
 
