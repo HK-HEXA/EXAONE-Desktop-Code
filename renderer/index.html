@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http: exa-file:; media-src exa-file:; font-src 'self' data:; frame-src exa-preview: exa-file:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<title>EXAONE Desktop</title>
+<link rel="stylesheet" href="vendor/katex.min.css">
+<link rel="stylesheet" href="vendor/hljs-light.css" id="hljs-light">
+<link rel="stylesheet" href="vendor/hljs-dark.css" id="hljs-dark" disabled>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sb-top drag">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><span class="brand-name"><span class="brand-wordmark" role="img" aria-label="EXAONE"></span><em>Desktop</em></span></div>
+      <button class="icon-btn nodrag" id="btn-sidebar-close" title="사이드바 접기 (Ctrl+B)" data-icon="sidebar"></button>
+    </div>
+    <div id="mode-seg" class="seg full">
+      <button data-tab="chat" data-icon="chat" title="대화와 에이전트 작업">채팅</button>
+      <button data-tab="code" data-icon="terminal" title="EXAONE Code — 터미널의 exaone 과 같은 세션">Code</button>
+    </div>
+    <button id="btn-new" class="new-btn" data-icon="newchat"><span>새 채팅</span><kbd>Ctrl N</kbd></button>
+    <nav id="nav">
+      <button data-view="tabular" data-icon="table"><span>Tabular 예측</span></button>
+      <button data-view="logs" data-icon="activity"><span>API 로그</span><b id="log-count"></b></button>
+    </nav>
+    <div class="search" data-icon="search"><input id="search" placeholder="대화 검색 (Ctrl+K)" spellcheck="false"></div>
+    <div id="conv-list"></div>
+    <div class="sb-foot">
+      <div id="rate" title="응답 헤더의 요청 한도"></div>
+      <button id="btn-settings" class="foot-btn" data-icon="sliders"><span>설정</span><i id="key-dot"></i></button>
+    </div>
+  </aside>
+
+  <div id="right">
+    <header id="topbar" class="drag">
+      <button id="btn-sidebar-open" class="icon-btn nodrag" title="사이드바 열기 (Ctrl+B)" data-icon="sidebar"></button>
+      <button id="proj-crumb" class="crumb nodrag" title="프로젝트 홈" hidden></button>
+      <button id="btn-workspace" class="crumb nodrag" hidden></button>
+      <div id="conv-title" class="nodrag" title="클릭하여 이름 변경"></div>
+      <span id="model-chip" class="pill nodrag"></span>
+      <span class="grow"></span>
+      <button id="btn-terminal" class="icon-btn nodrag" title="터미널에서 이 세션 열기 (exaone --resume)" data-icon="ext" hidden></button>
+      <button id="btn-export" class="icon-btn nodrag" title="대화 내보내기" data-icon="download"></button>
+      <button id="btn-panel" class="icon-btn nodrag" title="진행 상황 · 파일 · 변경 사항 · 미리보기 (Ctrl+.)" data-icon="panel"></button>
+    </header>
+
+    <div id="body">
+      <main id="main">
+        <section id="view-chat" class="view">
+          <div id="scroll"><div id="messages"></div></div>
+          <button id="btn-bottom" class="icon-btn" title="맨 아래로" data-icon="chevDown" hidden></button>
+          <div id="composer-wrap">
+            <div id="slash-menu" hidden></div>
+            <div id="composer">
+              <div id="attachments"></div>
+              <textarea id="input" rows="1" placeholder="EXAONE에게 메시지 보내기…   ( / 로 명령어 )" spellcheck="false"></textarea>
+              <div class="composer-row">
+                <button id="btn-attach" class="icon-btn" title="파일 첨부 등" data-icon="plus"></button>
+                <button id="btn-tools" class="icon-btn" title="출력 형식 · 도구" data-icon="sliders"></button>
+                <div id="mode-pick" class="seg sm" title="이 대화의 방식 — 첫 메시지를 보내면 고정됩니다" hidden>
+                  <button data-mode="chat">채팅</button>
+                  <button data-mode="agent">에이전트</button>
+                </div>
+                <button id="btn-json" class="chip" title="구조화 출력 (response_format)" hidden></button>
+                <button id="btn-approval" class="chip agent-only" title="도구 실행 승인 방식"></button>
+                <span class="grow"></span>
+                <button id="btn-effort" class="model-btn" title="모델 · 추론 강도"></button>
+                <button id="btn-send" class="send" title="보내기 (Enter)"></button>
+              </div>
+            </div>
+            <div id="composer-hint"></div>
+          </div>
+          <input type="file" id="file-input" multiple hidden>
+        </section>
+        <section id="view-tabular" class="view" hidden></section>
+        <section id="view-logs" class="view" hidden></section>
+      </main>
+
+      <aside id="rpanel" hidden>
+        <div class="rp-tabs">
+          <button data-tab="progress">진행</button>
+          <button data-tab="files" class="on">파일</button>
+          <button data-tab="changes">변경 사항</button>
+          <button data-tab="preview">미리보기</button>
+          <span class="grow"></span>
+          <button class="icon-btn" id="btn-panel-close" title="닫기" data-icon="x"></button>
+        </div>
+        <button id="rp-strip" title="진행 상황 보기" hidden></button>
+        <div id="rp-progress" class="rp-body" hidden></div>
+        <div id="rp-files" class="rp-body"></div>
+        <div id="rp-changes" class="rp-body" hidden></div>
+        <div id="rp-preview" class="rp-body" hidden></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div id="drop-overlay" hidden><div>파일을 놓아 첨부</div></div>
+<div id="modal-root"></div>
+<div id="toasts"></div>
+
+<script src="vendor/marked.umd.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+<script src="vendor/katex.min.js"></script>
+<script src="vendor/marked-katex.umd.js"></script>
+<script src="js/util.js"></script>
+<script src="js/md.js"></script>
+<script src="js/retry.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/views.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
