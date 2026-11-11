@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net, protocol, nativeTheme, Menu, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net, protocol, nativeTheme, Menu, Notification, Tray, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -43,6 +43,8 @@ let store;
 let history;
 let cliHistory; // 터미널(EXAONE Code)과 함께 쓰는 파일 버전 기록
 let win;
+let tray;            // 시스템 트레이 아이콘 (GC 되지 않게 잡아 둔다)
+let isQuitting = false; // true 일 때만 창 닫기가 실제 종료로 이어진다
 const chats = new Map();     // reqId -> AbortController
 const previews = new Map();  // id -> html
 const fetchImpl = (url, opts) => net.fetch(url, opts);
@@ -276,8 +278,49 @@ function createWindow() {
     if (p.linkURL && /^https?:/i.test(p.linkURL)) items.push({ label: '링크 열기', click: () => shell.openExternal(p.linkURL) });
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
+  // X 를 눌러도 종료하지 않고 트레이로 숨긴다. 트레이 메뉴의 '종료'나 OS 종료 때만 실제로 닫힌다.
+  win.on('close', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    win.hide();
+  });
+  win.on('session-end', () => { isQuitting = true; });
   win.on('closed', () => { win = null; });
   win.on('focus', () => { try { win.flashFrame(false); } catch { /* 플랫폼 미지원 */ } });
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+}
+
+// ---------- 트레이 ----------
+function trayIcon() {
+  const l = brandLogo();
+  const file = l && /^(png|jpe?g)$/.test(l.ext) ? l.file : path.join(__dirname, 'assets', 'desktop.png');
+  const src = nativeImage.createFromPath(file);
+  if (src.isEmpty()) return src;
+  if (process.platform === 'darwin') return src.resize({ width: 16, height: 16, quality: 'best' });
+  // 화면 배율(100% · 150% · 200%)마다 선명하게 보이도록 크기별 그림을 넣는다.
+  const img = nativeImage.createEmpty();
+  for (const [scaleFactor, size] of [[1, 16], [1.25, 20], [1.5, 24], [2, 32]]) {
+    img.addRepresentation({ scaleFactor, buffer: src.resize({ width: size, height: size, quality: 'best' }).toPNG() });
+  }
+  return img;
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(trayIcon());
+  tray.setToolTip('EXAONE Desktop');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'EXAONE Desktop 열기', click: showWindow },
+    { type: 'separator' },
+    { label: '종료', click: () => { isQuitting = true; app.quit(); } },
+  ]));
+  tray.on('click', showWindow);
+  tray.on('double-click', showWindow);
 }
 
 function buildMenu() {
@@ -525,8 +568,7 @@ if (!app.requestSingleInstanceLock()) {
   // 이미 떠 있는데 다시 실행하면 그 창을 앞으로 가져온다. 터미널(EXAONE Code)이 --register-token 으로 부르면 토큰 등록 화면을 연다.
   app.on('second-instance', (_e, argv) => {
     if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show(); win.focus();
+    showWindow();
     if (argv.includes('--register-token')) win.webContents.send('ui:token', {});
   });
 
@@ -567,8 +609,11 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     registerIpc();
     createWindow();
-    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+    createTray();
+    app.on('activate', showWindow);
   });
+
+  app.on('before-quit', () => { isQuitting = true; });
 
   app.on('window-all-closed', () => {
     tools.cancelAll();
