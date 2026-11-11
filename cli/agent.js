@@ -242,7 +242,7 @@ class Agent {
         fetchImpl: fetch, baseUrl: this.cfg.baseUrl, apiKey: this.key, body, signal: ac.signal, minGapMs: this.cfg.minGapMs,
         onEvent: (ev) => {
           switch (ev.type) {
-            case 'response': if (ev.headers && Object.keys(ev.headers).length) this.rate = ev.headers; break;
+            case 'response': if (ev.headers && Object.keys(ev.headers).length) { this.rate = ev.headers; store.saveRate(store.rateFromHeaders(ev.headers)); } break;
             case 'reasoning':
               if (!r.reasoning) { thinkStart = Date.now(); phase = 'think'; if (ui.thinkingStart) ui.thinkingStart(); }
               r.reasoning += ev.text;

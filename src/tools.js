@@ -120,7 +120,7 @@ function resolveIn(workspace, p) {
   const abs = path.resolve(root, String(p == null || p === '' ? '.' : p));
   const rel = path.relative(root, abs);
   if (rel === '') return abs;
-  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('작업 폴더 밖의 경로는 사용할 수 없습니다: ' + p);
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) throw new Error('작업 폴더 밖의 경로는 사용할 수 없습니다: ' + p);
   return abs;
 }
 const toRel = (workspace, abs) => path.relative(path.resolve(workspace), abs).split(path.sep).join('/') || '.';

@@ -610,7 +610,7 @@ async function runTurn(conv) {
       const lastMsg = conv.messages[conv.messages.length - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
         if (lastMsg.error) notify(conv, 'error', '오류로 멈췄습니다: ' + lastMsg.error);
-        else notify(conv, 'done', (viewOf(lastMsg).content || '작업을 마쳤습니다').replace(/[#*`>_]/g, ''));
+        else notify(conv, 'done', (viewOf(lastMsg).content || '작업을 마쳤습니다').replace(/[#*`>]/g, ''));
       }
     }
     refreshProgressPanel();

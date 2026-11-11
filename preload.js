@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('exa', {
   notify: (req) => ipcRenderer.invoke('notify', req),
   trustCheck: (dir) => ipcRenderer.invoke('trust:check', dir),
   trustAdd: (dir) => ipcRenderer.invoke('trust:add', dir),
+  rateGet: () => ipcRenderer.invoke('rate:get'),
+  rateSave: (r) => ipcRenderer.invoke('rate:save', r),
   updateState: () => ipcRenderer.invoke('update:state'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: () => ipcRenderer.invoke('update:install'),

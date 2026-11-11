@@ -249,8 +249,39 @@ function trustFolder(cwd) {
   return true;
 }
 
+// ---------- 요청 한도 ----------
+// 마지막 응답 헤더의 요청 한도를 남겨 둔다. 앱을 다시 켜거나(업데이트 포함) 터미널에서 써도 같은 값을 보여 준다.
+const rateFile = () => path.join(HOME, 'rate.json');
+function rateFromHeaders(hd) {
+  if (!hd) return null;
+  const num = (k) => (hd[k] != null && hd[k] !== '' && Number.isFinite(Number(hd[k])) ? Number(hd[k]) : null);
+  const r = { day: num('x-day-rate-limit'), dayLeft: num('x-day-rate-limit-remaining'), min: num('x-minute-rate-limit'), minLeft: num('x-minute-rate-limit-remaining'), ts: Date.now() };
+  return r.day == null && r.min == null ? null : r;
+}
+/** 지금 기록보다 새 값일 때만 저장한다. */
+function saveRate(r) {
+  if (!r || typeof r.ts !== 'number') return false;
+  try {
+    const old = readJson(rateFile(), null);
+    if (old && typeof old.ts === 'number' && old.ts > r.ts) return false;
+    writeJson(rateFile(), r);
+    return true;
+  } catch { return false; }
+}
+/**
+ * 저장해 둔 한도. 날짜가 바뀌었으면 하루 한도가 새로 시작됐을 수 있어 버리고,
+ * 1분이 지났으면 분당 한도는 빼고 돌려준다.
+ */
+function loadRate() {
+  const r = readJson(rateFile(), null);
+  if (!r || typeof r.ts !== 'number') return null;
+  if (new Date(r.ts).toDateString() !== new Date().toDateString()) return null;
+  if (Date.now() - r.ts > 60 * 1000) { r.min = null; r.minLeft = null; }
+  return r.day == null && r.min == null ? null : r;
+}
+
 module.exports = {
-  isTrusted, trustFolder,
+  isTrusted, trustFolder, rateFromHeaders, saveRate, loadRate,
   HOME, ensure, readJson, writeJson, findKey, saveKey, removeKey, keyFile, openDesktopApp,
   settingsFiles, loadSettings, saveUserSetting, addAllowRule,
   Session, projectDir, memoryFiles, appendMemory, loadHistory, appendHistory, customCommands,

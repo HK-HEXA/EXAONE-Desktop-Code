@@ -215,7 +215,7 @@
 
   // ----- 터미널 세션 목록: 시작할 때와 창으로 돌아올 때 새로 읽는다 -----
   refreshCliSessions();
-  window.addEventListener('focus', () => { refreshCliSessions(); refreshKeyInfo(); });
+  window.addEventListener('focus', () => { refreshCliSessions(); refreshKeyInfo(); loadSavedRate(); });
   // 터미널에서 세션에 글이 쌓이는 즉시 반영한다: 파일 변경 알림 + (알림을 못 받는 환경을 위한) 짧은 주기의 확인
   exa.onCliChanged(() => refreshCliSessions(true));
   exa.onLiveEvents(({ sid, events }) => onLiveEvents(sid, events));
@@ -235,6 +235,7 @@
 
   // ----- 첫 화면 -----
   renderRate();
+  loadSavedRate(); // 지난번 실행(업데이트 전 포함)이나 터미널에서 받은 요청 한도
   renderLogBadge();
   newConv();
   if (S.settings.ui.panel) showPanel();

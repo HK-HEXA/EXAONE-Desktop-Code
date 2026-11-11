@@ -1150,7 +1150,7 @@ class App {
     if (this.liveOut) this.liveOut.end();
     // 끝났음을 알린다: 다른 창을 보고 있을 때, 포커스를 알 수 없는 터미널에서는 10초 넘게 걸린 작업만. 직접 멈춘 경우는 알리지 않는다.
     if (done && done.error !== 'interrupted' && (this.notifier.focused === false || Date.now() - startedAt >= 10000)) {
-      this.notifier.notify(done.error ? '작업 중단' : '작업 완료', (done.error ? '오류: ' + done.error : (done.text || '작업을 마쳤습니다').replace(/[#*`>_]/g, '')) + ' — ' + path.basename(this.cwd));
+      this.notifier.notify(done.error ? '작업 중단' : '작업 완료', (done.error ? '오류: ' + done.error : (done.text || '작업을 마쳤습니다').replace(/[#*`>]/g, '')) + ' — ' + path.basename(this.cwd));
     }
     this.busy = false; this.spinner = null; this.pending = []; this.running = null;
     this.render();
@@ -1252,8 +1252,11 @@ class App {
       } },
       { name: '/cost', desc: '이 세션의 토큰·요청·시간', run() {
         const t = agent().totals, r = agent().rate || {};
+        const saved = r['x-day-rate-limit'] ? null : store.loadRate(); // 이 세션에서 아직 요청 전이면 마지막으로 남겨 둔 값
         info([c.bold('세션 사용량'), `  요청 ${fmtNum(t.requests)}회 · API 시간 ${fmtElapsed(t.apiMs)}`, `  출력 ${fmtNum(t.completion)} 토큰 (추론 ${fmtNum(t.reasoning)}) · 마지막 요청 컨텍스트 ${fmtNum(t.lastPrompt)} 토큰`,
-          r['x-day-rate-limit'] ? `  오늘 남은 요청 ${r['x-day-rate-limit-remaining']} / ${r['x-day-rate-limit']} · 분당 ${r['x-minute-rate-limit-remaining']} / ${r['x-minute-rate-limit']}` : c.dim('  요청 한도는 첫 응답 뒤에 표시됩니다'),
+          r['x-day-rate-limit'] ? `  오늘 남은 요청 ${r['x-day-rate-limit-remaining']} / ${r['x-day-rate-limit']} · 분당 ${r['x-minute-rate-limit-remaining']} / ${r['x-minute-rate-limit']}`
+            : saved && saved.day != null ? `  오늘 남은 요청 ${saved.dayLeft} / ${saved.day}` + c.dim(` (${new Date(saved.ts).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })} 마지막 응답 기준)`)
+              : c.dim('  요청 한도는 첫 응답 뒤에 표시됩니다'),
           c.dim('  현재 EXAONE API 는 무료로 제공되어 금액은 계산하지 않습니다')]);
       } },
       { name: '/diff', desc: '이 세션에서 바뀐 파일과 변경 내용', run() {

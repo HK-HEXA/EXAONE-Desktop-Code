@@ -712,6 +712,16 @@ function updateRate(headers) {
   if (r.day == null && r.min == null) return;
   S.rate = r;
   renderRate();
+  exa.rateSave(r).catch(() => {}); // 앱을 다시 켜도(업데이트 포함) 유지되게 남겨 둔다
+}
+
+/** 남겨 둔 한도(앱을 다시 켰거나 터미널에서 쓴 값)를 불러온다. 지금 보이는 값보다 새 것일 때만 바꾼다. */
+async function loadSavedRate() {
+  try {
+    const r = await exa.rateGet();
+    if (!r) { if (S.rate && new Date(S.rate.ts).toDateString() !== new Date().toDateString()) { S.rate = null; renderRate(); } return; }
+    if (!S.rate || r.ts >= S.rate.ts) { S.rate = r; renderRate(); }
+  } catch { /* 다음에 다시 */ }
 }
 
 function renderRate() {
@@ -719,6 +729,7 @@ function renderRate() {
   el.innerHTML = '';
   const r = S.rate;
   if (!r) { el.append(h('span', { class: 'muted', text: '요청 한도: 첫 응답 후 표시' })); return; }
+  el.title = '응답 헤더의 요청 한도 · ' + new Date(r.ts).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + ' 마지막 응답 기준';
   const row = (label, left, total) => {
     if (total == null || left == null) return null;
     const pct = total ? clamp(left / total * 100, 0, 100) : 0;
@@ -726,7 +737,7 @@ function renderRate() {
       h('span', { text: label }), h('span', { class: 'rate-bar' }, h('i', { style: { width: pct + '%' } })),
       h('b', { text: `${fmtNum(left)} / ${fmtNum(total)}` }));
   };
-  el.append(row('오늘', r.dayLeft, r.day), row('분당', r.minLeft, r.min));
+  el.append(...[row('오늘', r.dayLeft, r.day), row('분당', r.minLeft, r.min)].filter(Boolean));
 }
 
 // ---------- 오른쪽 패널 ----------

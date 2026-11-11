@@ -457,7 +457,7 @@ function registerIpc() {
     const emit = (ev) => send('chat:event', { reqId, ...ev });
     if (!key) {
       setImmediate(() => {
-        emit({ type: 'error', status: 401, message: 'API 키가 설정되지 않았습니다. 설정에서 키를 입력하거나 앱 폴더(또는 상위 폴더)에 key.txt 를 두세요.' });
+        emit({ type: 'error', status: 401, message: '토큰(API 키)이 등록되어 있지 않습니다. 설정 → 연결에서 토큰을 등록하세요.' });
         emit({ type: 'done', raw: '' });
       });
       return true;
@@ -561,6 +561,9 @@ function registerIpc() {
   // 폴더 신뢰: 터미널(EXAONE Code)과 같은 목록(~/.exaone/trusted-folders.json)을 함께 쓴다.
   ipcMain.handle('trust:check', (_e, dir) => { try { return cliStore.isTrusted(String(dir || '')); } catch { return false; } });
   ipcMain.handle('trust:add', (_e, dir) => { try { return cliStore.trustFolder(String(dir || '')); } catch { return false; } });
+  // 요청 한도: 터미널(EXAONE Code)과 함께 쓰는 ~/.exaone/rate.json 에 남겨 다시 켜도 유지한다.
+  ipcMain.handle('rate:get', () => { try { return cliStore.loadRate(); } catch { return null; } });
+  ipcMain.handle('rate:save', (_e, r) => { try { return cliStore.saveRate(r); } catch { return false; } });
   ipcMain.handle('update:state', () => updater.getState());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:install', () => installUpdate());
