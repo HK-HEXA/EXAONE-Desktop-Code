@@ -191,6 +191,9 @@ body.mode-agent .agent-only { display: inline-flex; }
 .foot-btn { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 8px; border-radius: 8px; color: var(--text-2); font-size: 13.5px; }
 .foot-btn span { flex: 1; text-align: left; }
 .foot-btn:hover { background: var(--bg-hover); color: var(--text); }
+.update-btn { background: var(--accent); color: var(--accent-fg); font-weight: 500; }
+.update-btn:hover { background: var(--accent-hover); color: var(--accent-fg); }
+.update-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 #key-dot, .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; display: inline-block; }
 #key-dot.ok, .dot.ok { background: var(--ok); }
 #key-dot.bad, .dot.bad { background: var(--err); }

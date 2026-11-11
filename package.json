@@ -1,7 +1,7 @@
 {
   "name": "exaone-desktop",
   "productName": "EXAONE Desktop",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "K-EXAONE 2.5 API 테스트용 데스크톱 클라이언트(EXAONE Desktop)와 터미널 에이전트(EXAONE Code)",
   "main": "main.js",
   "bin": {
@@ -34,6 +34,13 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "HK-HEXA",
+        "repo": "EXAONE-Desktop-Code"
+      }
+    ],
     "asar": false,
     "files": [
       "main.js",
@@ -78,5 +85,8 @@
     "linux": {
       "target": "dir"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

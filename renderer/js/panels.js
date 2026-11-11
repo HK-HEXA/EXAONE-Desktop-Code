@@ -1372,10 +1372,48 @@ function settingsSection(id, refresh) {
     h('div', { class: 'about' },
       h('div', null, h('b', { text: 'EXAONE Desktop ' + S.env.appVersion })),
       h('div', { class: 'muted', text: `Electron ${S.env.electron} · Chromium ${S.env.chrome} · Node ${S.env.node}` }),
+      updateRow(),
       h('div', { class: 'inline', style: { marginTop: '10px' } },
         h('button', { class: 'btn sm', onclick: () => exa.open('https://docs.exaone.ai') }, icon('ext', 13), 'EXAONE API 문서'))),
     note('터미널에서는 같은 폴더의 exaone-code 로 에이전트를 쓸 수 있습니다 (README 참고).'),
   ];
+}
+
+/** 설정 > 정보의 업데이트 줄. 상태가 바뀌면 renderUpdate() 가 다시 그린다. */
+function updateRow() {
+  const row = h('div', { class: 'update-row', id: 'update-row' });
+  drawUpdateRow(row);
+  return row;
+}
+
+function drawUpdateRow(row) {
+  const u = S.update || {};
+  row.innerHTML = '';
+  if (!u.supported) {
+    row.append(h('span', { class: 'muted small', text: S.env.platform === 'win32' ? '자동 업데이트는 설치판에서만 동작합니다 (개발 실행 중).' : '자동 업데이트는 Windows 설치판에서만 동작합니다.' }));
+    return;
+  }
+  const label = {
+    idle: '', checking: '업데이트 확인 중…', latest: '최신 버전입니다.',
+    downloading: `새 버전 v${u.version || ''} 받는 중… ${u.percent || 0}%`,
+    ready: `새 버전 v${u.version} 준비됨 — 재시작하면 설치됩니다.`,
+    error: '업데이트 확인 실패: ' + (u.error || ''),
+  }[u.status] || '';
+  row.append(h('span', { class: 'dot ' + (u.status === 'error' ? 'bad' : u.status === 'latest' || u.status === 'ready' ? 'ok' : '') }), h('span', { text: label || '자동 업데이트 사용 중' }));
+  if (u.status === 'ready') row.append(h('button', { class: 'btn sm primary', onclick: () => exa.updateInstall() }, '재시작하여 업데이트'));
+  else row.append(h('button', { class: 'btn sm', disabled: u.status === 'checking' || u.status === 'downloading', onclick: () => { exa.updateCheck(); } }, icon('refresh', 13), '업데이트 확인'));
+}
+
+/** 업데이트 상태를 사이드바 버튼과 설정 화면에 반영한다. */
+function renderUpdate() {
+  const u = S.update || {};
+  const btn = $('#btn-update');
+  if (btn) {
+    btn.hidden = u.status !== 'ready';
+    if (u.status === 'ready') btn.title = `v${u.version} 을 설치하고 다시 실행합니다`;
+  }
+  const row = $('#update-row');
+  if (row) drawUpdateRow(row);
 }
 
 /** 터미널 명령(exaone)의 설치 상태를 다시 읽는다. */

@@ -70,13 +70,18 @@ jobs:
 
       - name: 빌드 결과 확인
         shell: bash
-        run: ls -la dist/*.exe
+        run: |
+          ls -la dist/*.exe dist/latest.yml dist/*.blockmap
+          cat dist/latest.yml
 
       - name: 산출물 보관
         uses: actions/upload-artifact@v4
         with:
           name: EXAONE-Desktop-Setup
-          path: dist/EXAONE-Desktop-Setup.exe
+          path: |
+            dist/EXAONE-Desktop-Setup.exe
+            dist/EXAONE-Desktop-Setup.exe.blockmap
+            dist/latest.yml
           if-no-files-found: error
 
       - name: Release 에 올리기
@@ -84,9 +89,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+        # latest.yml · blockmap 은 앱의 자동 업데이트가 새 버전을 찾고 받는 데 쓴다.
         run: |
+          files=(dist/EXAONE-Desktop-Setup.exe dist/EXAONE-Desktop-Setup.exe.blockmap dist/latest.yml)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/EXAONE-Desktop-Setup.exe --clobber
+            gh release upload "$TAG" "${files[@]}" --clobber
           else
-            gh release create "$TAG" dist/EXAONE-Desktop-Setup.exe --title "EXAONE Desktop $TAG" --generate-notes --verify-tag
+            gh release create "$TAG" "${files[@]}" --title "EXAONE Desktop $TAG" --generate-notes --verify-tag
           fi

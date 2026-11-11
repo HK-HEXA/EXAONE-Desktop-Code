@@ -51,6 +51,7 @@
   $$('#nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
   $('#search').addEventListener('input', (e) => { S.search = e.target.value; renderConvList(); });
   $('#btn-settings').addEventListener('click', () => openSettings());
+  $('#btn-update').addEventListener('click', () => exa.updateInstall());
   const toggleSidebar = () => {
     const closed = document.body.classList.toggle('sb-closed');
     saveSettings({ ui: { sidebar: !closed } });
@@ -218,6 +219,9 @@
   exa.onLiveStop(({ sid }) => { if (S.busy && S.run && S.run.conv.code && S.run.conv.code.id === sid) stopRun(); });
   setInterval(() => { if (S.conv && S.conv.code && !S.busy && S.view === 'chat') syncCodeConv(); }, 1500);
   exa.onTokenRequest(() => openTokenDialog());
+  // 자동 업데이트(Windows 설치판): 새 버전을 받아 두면 사이드바에 '재시작하여 업데이트' 버튼이 뜬다.
+  exa.onUpdateState((st) => { S.update = st; renderUpdate(); });
+  exa.updateState().then((st) => { S.update = st; renderUpdate(); }).catch(() => {});
   // 알림을 누르면 그 대화를 연다.
   exa.onNotifyClick(({ convId }) => {
     if (!convId || (S.conv && S.conv.id === convId)) { setView('chat'); return; }

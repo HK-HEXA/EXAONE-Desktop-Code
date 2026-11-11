@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const sessions = require('./src/sessions');
 const live = require('./src/live');
 const cliInstall = require('./src/cliInstall');
+const updater = require('./src/updater');
 const crypto = require('crypto');
 
 if (process.env.EXAONE_DATA_DIR) app.setPath('userData', path.resolve(process.env.EXAONE_DATA_DIR));
@@ -314,13 +315,38 @@ function createTray() {
   if (tray) return;
   tray = new Tray(trayIcon());
   tray.setToolTip('EXAONE Desktop');
+  updateTrayMenu();
+  tray.on('click', showWindow);
+  tray.on('double-click', showWindow);
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const u = updater.getState();
+  const upd = !u.supported ? []
+    : u.status === 'ready' ? [{ label: `재시작하여 업데이트 (v${u.version})`, click: installUpdate }]
+      : u.status === 'downloading' ? [{ label: `업데이트 받는 중… ${u.percent || 0}%`, enabled: false }]
+        : u.status === 'checking' ? [{ label: '업데이트 확인 중…', enabled: false }]
+          : [{ label: '업데이트 확인', click: () => updater.check() }];
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'EXAONE Desktop 열기', click: showWindow },
+    ...upd,
     { type: 'separator' },
     { label: '종료', click: () => { isQuitting = true; app.quit(); } },
   ]));
-  tray.on('click', showWindow);
-  tray.on('double-click', showWindow);
+}
+
+// ---------- 자동 업데이트 ----------
+function installUpdate() {
+  return updater.install(() => { isQuitting = true; tools.cancelAll(); for (const ac of chats.values()) ac.abort(); });
+}
+
+let lastTrayStatus = '';
+function onUpdateState(st) {
+  if (win && !win.isDestroyed()) win.webContents.send('update:state', st);
+  // 진행률은 메뉴를 너무 자주 다시 만들지 않도록 10% 단위로만 반영한다.
+  const key = st.status + ':' + (st.status === 'downloading' ? Math.floor((st.percent || 0) / 10) : '');
+  if (key !== lastTrayStatus) { lastTrayStatus = key; updateTrayMenu(); }
 }
 
 function buildMenu() {
@@ -532,6 +558,9 @@ function registerIpc() {
   ipcMain.handle('clibin:status', () => cliAct(() => cliInstall.status(cliCtx())));
   ipcMain.handle('clibin:install', () => cliAct(() => cliInstall.install(cliCtx())));
   ipcMain.handle('clibin:uninstall', () => cliAct(() => cliInstall.uninstall(cliCtx())));
+  ipcMain.handle('update:state', () => updater.getState());
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:install', () => installUpdate());
   ipcMain.handle('notify', (_e, req) => { try { return notifyUser(req || {}); } catch { return false; } });
   ipcMain.handle('cli:terminal', async (_e, { cwd, id }) => {
     try { return { ok: true, data: await openCliTerminal(cwd, id) }; }
@@ -610,6 +639,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc();
     createWindow();
     createTray();
+    updater.init(onUpdateState);
     app.on('activate', showWindow);
   });
 
