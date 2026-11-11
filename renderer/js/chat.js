@@ -605,6 +605,14 @@ async function runTurn(conv) {
   } finally {
     S.run = null;
     setBusy(false);
+    // 작업이 끝났음을 알린다 (사용자가 직접 멈춘 경우는 빼고).
+    if (!run.aborted) {
+      const lastMsg = conv.messages[conv.messages.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        if (lastMsg.error) notify(conv, 'error', '오류로 멈췄습니다: ' + lastMsg.error);
+        else notify(conv, 'done', (viewOf(lastMsg).content || '작업을 마쳤습니다').replace(/[#*`>_]/g, ''));
+      }
+    }
     refreshProgressPanel();
     if (conv.mode === 'agent') attachTurnChanges(conv);
     refreshChangesPanel();
@@ -821,6 +829,15 @@ function newLog(reqId, body) {
   if (S.logs.length > 60) S.logs.pop();
   renderLogBadge();
   return log;
+}
+
+/**
+ * 시스템 알림: 작업 완료(done) · 오류(error) · 질문(ask) · 승인 대기(approval).
+ * 띄울지 말지(창이 앞에 있는지, 설정)는 메인 프로세스가 정한다. 알림을 누르면 그 대화가 열린다.
+ */
+function notify(conv, kind, body) {
+  const head = { done: '작업 완료', error: '작업 중단', ask: '질문이 있습니다', approval: '승인이 필요합니다' }[kind] || 'EXAONE';
+  try { exa.notify({ title: `${head} — ${conv.title || (conv.code ? 'EXAONE Code' : '새 대화')}`, body, convId: conv.id, kind }); } catch { /* 알리지 못해도 작업은 계속한다 */ }
 }
 
 /** 실패한 요청을 다시 보내는 횟수 (기본 10). 설정 파일의 maxRetries 로 바꿀 수 있다. */
@@ -1066,6 +1083,7 @@ async function execToolCall(run, conv, asst, tc) {
       st.status = 'ask';
       st.questions = qs;
       liveEmit('wait', 'ask');
+      notify(conv, 'ask', qs[0] && qs[0].question ? qs[0].question : '답변을 기다리고 있습니다');
       const ans = await wait();
       liveEmit('waitEnd');
       if (ans == null) result = { ok: false, skipped: true, content: '(실행되지 않음: 사용자가 중단함)' };
@@ -1079,6 +1097,7 @@ async function execToolCall(run, conv, asst, tc) {
       if (needsApproval(def, conv)) {
         st.status = 'approval';
         liveEmit('wait', 'approval');
+        { const d = describeTool(tc, args && typeof args === 'object' ? args : {}); notify(conv, 'approval', `${d.title}${d.sub ? ' — ' + d.sub : ''} · 승인을 기다리고 있습니다`); }
         const decision = await wait();
         liveEmit('waitEnd');
         if (decision === 'always') S.sessionAllow.add(conv.id + ':' + def.category);
@@ -1270,6 +1289,10 @@ function welcomeEl() {
         : agent ? (S.conv.workspace ? '작업 폴더 안에서 파일을 만들고 고치며, 결과는 오른쪽 미리보기에 나타납니다' : '먼저 작업 폴더를 골라 주세요')
         : `${S.settings.model} · 텍스트 전용 · 컨텍스트 512K`),
     agent && !S.conv.workspace ? h('button', { class: 'btn primary w-pick', onclick: () => chooseWorkspace() }, icon('folder', 15), '작업 폴더 선택') : null,
+    // Code 탭: 터미널 명령(exaone)이 아직 없으면 여기서 바로 설치할 수 있게 한다.
+    S.conv.code && S.cliBin && !S.cliBin.installed && !S.cliBin.other
+      ? h('p', { class: 'w-cli' }, '터미널에서 ', h('code', { text: 'exaone' }), ' 명령으로도 쓸 수 있습니다. ', h('button', { class: 'link', onclick: () => openSettings('cli') }, 'EXAONE Code 설치'))
+      : null,
     h('div', { class: 'w-grid' }, sug.map((s) => h('button', {
       class: 'w-card',
       onclick: () => {

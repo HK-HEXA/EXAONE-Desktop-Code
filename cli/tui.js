@@ -13,6 +13,7 @@ const tools = require('../src/tools');
 const sessions = require('../src/sessions');
 const live = require('../src/live');
 const retry = require('../renderer/js/retry');
+const { Notifier } = require('./notify');
 // 같은 세션을 보는 상대 쪽(데스크톱 앱)과 주고받는 화면 사건들
 const LIVE_EVENTS = ['requestStart', 'thinkingStart', 'reasoning', 'thinkingEnd', 'contentStart', 'content', 'contentEnd', 'toolBuilding', 'toolStart', 'toolOutput', 'toolEnd', 'error', 'notice', 'retryWait', 'compactStart', 'compactEnd', 'interrupted', 'turnEnd'];
 const { MODES, CTX_LIMIT, COMPACT_RESERVE, COMPACT_BUFFER, toolTitle } = require('./agent');
@@ -253,6 +254,8 @@ class App {
     Object.assign(this, { agent, cfg, cwd, keyInfo, history, settings, opt });
     this.screen = new Screen();
     this.screen.anchor = true; // 입력창을 터미널 맨 아래에 붙여 둔다
+    // 작업 완료 · 질문 · 권한 확인을 알림으로 알려 준다 (/config 에서 끌 수 있다).
+    this.notifier = new Notifier({ enabled: (settings || {}).notifications !== false && process.env.EXAONE_NOTIFY !== '0' });
     this.editor = new Editor(store.loadHistory(cwd));
     this.modalObj = null;
     this.busy = false;
@@ -296,7 +299,14 @@ class App {
     for (const name of LIVE_EVENTS) out[name] = (...args) => { this.emitLive(name, args); return base[name](...args); };
     // 사용자의 확인을 기다리는 동안은 상대 쪽에 "확인 대기 중" 으로 보인다.
     for (const [name, kind] of [['permission', 'approval'], ['askUser', 'ask'], ['approvePlan', 'plan']]) {
-      out[name] = async (...args) => { this.emitLive('wait', [kind]); try { return await base[name](...args); } finally { this.emitLive('waitEnd', []); } };
+      out[name] = async (...args) => {
+        this.emitLive('wait', [kind]);
+        // 답을 기다리는 동안 다른 창을 보고 있으면 알려 준다 (포커스를 알 수 없는 터미널에서는 6초 동안 답이 없을 때).
+        let open = true;
+        const q = kind === 'ask' && Array.isArray(args[0]) && args[0][0] ? args[0][0].question : '';
+        this.notifier.notify({ ask: '질문이 있습니다', plan: '계획 승인을 기다립니다' }[kind] || '승인이 필요합니다', (q || '터미널에서 확인해 주세요') + ' — ' + path.basename(this.cwd), { waitMs: 6000, still: () => open });
+        try { return await base[name](...args); } finally { open = false; this.notifier.cancel(); this.emitLive('waitEnd', []); }
+      };
     }
     return out;
   }
@@ -637,6 +647,7 @@ class App {
   // ----- 키 -----
   onKey(str, key) {
     const k = key || {};
+    if (this.notifier.key(k.sequence)) return; // 터미널이 보낸 포커스 신호 (입력이 아니다)
     if (this.modalObj) { this.modalObj.onKey(str, key); if (this.modalObj) this.render(); return; }
     this.hint = null;
     const ed = this.editor;
@@ -1027,9 +1038,15 @@ class App {
     this.busy = true; this.interrupted = false; this.spinner = null;
     this.render();
     this.liveWriter().begin({ display: shown || text, base: this.agent.messages.length });
-    try { await this.agent.turn(full, { display: shown || text }); }
+    const startedAt = Date.now();
+    let done = null;
+    try { done = await this.agent.turn(full, { display: shown || text }); }
     catch (e) { this.block([c.red(String(e && e.message || e))], c.red('●')); }
     if (this.liveOut) this.liveOut.end();
+    // 끝났음을 알린다: 다른 창을 보고 있을 때, 포커스를 알 수 없는 터미널에서는 10초 넘게 걸린 작업만. 직접 멈춘 경우는 알리지 않는다.
+    if (done && done.error !== 'interrupted' && (this.notifier.focused === false || Date.now() - startedAt >= 10000)) {
+      this.notifier.notify(done.error ? '작업 중단' : '작업 완료', (done.error ? '오류: ' + done.error : (done.text || '작업을 마쳤습니다').replace(/[#*`>_]/g, '')) + ' — ' + path.basename(this.cwd));
+    }
     this.busy = false; this.spinner = null; this.pending = []; this.running = null;
     this.render();
   }
@@ -1106,12 +1123,14 @@ class App {
             ['기본 권한 모드', app.settings.permissions.defaultMode || 'default'],
             ['자세히 보기 (추론·도구 출력 펼침)', app.verbose ? '켜짐' : '꺼짐'],
             ['긴 대화 자동 압축', agent().cfg.autoCompact !== false ? '켜짐' : '꺼짐'],
+            ['알림 (작업 완료 · 질문 · 권한 확인)', app.notifier.enabled ? '켜짐' : '꺼짐'],
           ];
           const v = await app.select({ title: '설정', options: items.map(([k, val]) => ({ label: `${padEnd(k, 34)} ${c.brand(val)}` })).concat([{ label: '닫기' }]), cancel: items.length });
           if (v === 0) { const e = ['low', 'medium', 'high', 'max']; const i = await app.select({ title: '추론 강도', options: e.map((x) => ({ label: x })), cancel: -1 }); if (i >= 0) { agent().cfg.effort = e[i]; store.saveUserSetting('effort', e[i]); } }
           else if (v === 1) { const m = ['default', 'acceptEdits', 'plan']; const i = await app.select({ title: '시작할 때의 권한 모드', options: [{ label: 'default — 편집·명령마다 확인' }, { label: 'acceptEdits — 파일 편집은 자동 허용' }, { label: 'plan — 계획부터 세우기' }], cancel: -1 }); if (i >= 0) { app.settings.permissions.defaultMode = m[i]; const s = store.readJson(store.settingsFiles(app.cwd).user, {}); s.permissions = { ...(s.permissions || {}), defaultMode: m[i] }; store.writeJson(store.settingsFiles(app.cwd).user, s); } }
           else if (v === 2) { app.verbose = !app.verbose; store.saveUserSetting('verbose', app.verbose); }
           else if (v === 3) { agent().cfg.autoCompact = agent().cfg.autoCompact === false; store.saveUserSetting('autoCompact', agent().cfg.autoCompact); }
+          else if (v === 4) { app.notifier.enabled = !app.notifier.enabled; store.saveUserSetting('notifications', app.notifier.enabled); }
           else break;
         }
       } },
@@ -1312,6 +1331,7 @@ class App {
   exit(code = 0) {
     clearInterval(this.tick);
     this.screen.clear();
+    this.notifier.stop();
     process.stdout.write('\x1b[?2004l\x1b[?25h');
     try { if (process.stdin.isTTY) process.stdin.setRawMode(false); } catch { /* 이미 닫힘 */ }
     const s = this.agent.session;
@@ -1325,9 +1345,10 @@ class App {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdout.write('\x1b[?2004h');
+    this.notifier.start();
     process.stdin.on('keypress', (str, key) => { try { this.onKey(str, key); } catch (e) { this.say(c.red('입력 처리 오류: ' + (e && e.message))); } });
     process.stdout.on('resize', () => this.render());
-    process.on('exit', () => { try { process.stdout.write('\x1b[?2004l\x1b[?25h'); } catch { /* 무시 */ } });
+    process.on('exit', () => { try { process.stdout.write('\x1b[?1004l\x1b[?2004l\x1b[?25h'); } catch { /* 무시 */ } });
     // 시작할 때 터미널을 비우고 맨 위에서부터 그린다 (이전 출력 아래에 이어 붙지 않게).
     this.clearScreen();
     this.banner();

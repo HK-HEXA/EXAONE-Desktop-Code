@@ -3,6 +3,10 @@
 // EXAONE Code — 터미널에서 쓰는 K-EXAONE 에이전트. `exaone` 명령으로 실행한다.
 // 데스크톱 앱과 같은 API 클라이언트(src/exaone.js)와 도구(src/tools.js)를 쓰며 추가 의존성이 없다 (Node 22+).
 
+// 데스크톱 앱이 설치한 런처는 PC 에 Node 가 없으면 앱 자신을 Node 처럼 실행한다(ELECTRON_RUN_AS_NODE).
+// 그 표시가 여기서 실행하는 명령이나 데스크톱 앱에까지 이어지지 않게 바로 지운다.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const fs = require('fs');
 const path = require('path');
 
@@ -216,7 +220,7 @@ async function main() {
 }
 
 main().catch((e) => {
-  try { process.stdout.write('\x1b[?2004l\x1b[?25h'); if (process.stdin.isTTY) process.stdin.setRawMode(false); } catch { /* 무시 */ }
+  try { process.stdout.write('\x1b[?1004l\x1b[?2004l\x1b[?25h'); if (process.stdin.isTTY) process.stdin.setRawMode(false); } catch { /* 무시 */ }
   console.error(e && e.stack || e);
   process.exit(1);
 });

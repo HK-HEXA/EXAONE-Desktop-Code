@@ -1,7 +1,7 @@
 {
   "name": "exaone-desktop",
   "productName": "EXAONE Desktop",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "K-EXAONE 2.5 API 테스트용 데스크톱 클라이언트(EXAONE Desktop)와 터미널 에이전트(EXAONE Code)",
   "main": "main.js",
   "bin": {
@@ -11,12 +11,72 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "cli": "node cli/exaone-code.js"
+    "cli": "node cli/exaone-code.js",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "dist:dir": "electron-builder --dir --publish never"
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "devDependencies": {
-    "electron": "^45.2.3"
+    "electron": "^45.2.3",
+    "electron-builder": "^26.0.12"
+  },
+  "author": "HK-HEXA",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HK-HEXA/EXAONE-Desktop-Code.git"
+  },
+  "build": {
+    "appId": "ai.exaone.desktop",
+    "productName": "EXAONE Desktop",
+    "artifactName": "EXAONE-Desktop-Setup.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*",
+      "cli/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "!assets/logo.*",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime/node",
+        "to": "node",
+        "filter": [
+          "node.exe",
+          "LICENSE"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/desktop.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "EXAONE Desktop",
+      "uninstallDisplayName": "EXAONE Desktop"
+    },
+    "linux": {
+      "target": "dir"
+    }
   }
 }

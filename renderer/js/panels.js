@@ -1167,6 +1167,7 @@ const SETTINGS_SECTIONS = [
   { id: 'model', label: '모델', icon: 'spark' },
   { id: 'format', label: '출력 형식', icon: 'braces' },
   { id: 'agent', label: '에이전트', icon: 'terminal' },
+  { id: 'cli', label: 'EXAONE Code', icon: 'terminal' },
   { id: 'functions', label: '함수 호출', icon: 'code' },
   { id: 'data', label: '데이터', icon: 'folder' },
   { id: 'about', label: '정보', icon: 'info' },
@@ -1190,6 +1191,7 @@ function settingsSection(id, refresh) {
       rowField('세부 내용 펼쳐 두기', toggle(!!S.settings.expandDetails, (v) => { saveSettings({ expandDetails: v }); renderConv(); }), '추론 과정과 도구 실행 내용을 기본으로 펼칩니다. 꺼 두면 접힌 채로 진행하고, 눌러서 열어 볼 수 있습니다'),
       rowField('진행 상황 자동 열기', toggle(S.settings.autoProgress !== false, (v) => saveSettings({ autoProgress: v })), '에이전트가 작업 계획을 세우면 오른쪽에 진행 탭을 바로 띄웁니다'),
       rowField('파일 미리보기 자동 열기', toggle(S.settings.autoPreview !== false, (v) => saveSettings({ autoPreview: v })), '에이전트가 파일을 만들거나 고치면 오른쪽에 바로 띄웁니다'),
+      rowField('알림', select([['unfocused', '창이 뒤에 있을 때만'], ['always', '항상'], ['off', '끄기']], S.settings.notify || 'unfocused', (v) => saveSettings({ notify: v })), '작업이 끝났거나 질문 · 승인을 기다릴 때 시스템 알림으로 알려 줍니다. 알림을 누르면 그 대화가 열립니다'),
       rowField('긴 대화 자동 압축', toggle((S.settings.compact || {}).auto !== false, (v) => saveSettings({ compact: { auto: v } })), '컨텍스트가 한도에 가까워지면 이전 대화를 요약으로 바꿔 이어 갑니다. 기준은 약 491K 토큰 (컨텍스트 창 524K − 요약용 20K − 여유 13K) 이며, 요청을 보내기 전마다 확인합니다. 화면의 대화는 그대로 남고, /compact 로 직접 실행할 수도 있습니다'),
     ].filter(Boolean);
   }
@@ -1313,6 +1315,50 @@ function settingsSection(id, refresh) {
     ];
   }
 
+  if (id === 'cli') {
+    // 터미널 명령(exaone) 설치 · 제거
+    const info = h('div', { class: 'key-info cli-info' });
+    const actions = h('div', { class: 'inline cli-actions' });
+    const detail = h('p', { class: 'muted small set-note cli-detail' });
+    const draw = (st, busy) => {
+      info.innerHTML = ''; actions.innerHTML = '';
+      if (!st) { info.append(h('span', { class: 'dot' }), h('span', { text: '확인하는 중…' })); return; }
+      const ready = st.installed && st.inPath;
+      info.append(h('span', { class: 'dot ' + (ready ? 'ok' : 'bad') }),
+        st.installed
+          ? h('span', null, h('b', { text: ready ? '설치됨' : '설치됨 (PATH 등록 필요)' }), ' — 새 터미널에서 ', h('code', { text: 'exaone' }), ' 실행')
+          : st.other ? h('span', null, h('b', { text: '다른 방법으로 설치되어 있음' }), ' — ', st.other)
+            : h('span', { text: '설치되어 있지 않습니다. 설치하면 어느 폴더에서나 exaone 명령을 쓸 수 있습니다.' }));
+      actions.append(
+        h('button', { class: 'btn primary', disabled: !!busy, onclick: () => act('install') }, st.installed ? '다시 설치' : '설치'),
+        st.installed ? h('button', { class: 'btn danger-ghost', disabled: !!busy, onclick: () => act('uninstall') }, '제거') : null);
+      detail.textContent = st.installed
+        ? `위치: ${st.launcher} · 실행 환경: ${st.runtime}` + (st.pathError ? ` · ${st.pathError}` : st.pathNote ? ` · ${st.pathNote}` : '')
+        : `설치 위치: ${st.dir} · 실행 환경: ${st.runtime}`;
+    };
+    const act = async (what) => {
+      draw(S.cliBin, true);
+      const r = await (what === 'install' ? exa.cliBinInstall() : exa.cliBinUninstall());
+      if (!r.ok) { toast((what === 'install' ? '설치' : '제거') + '하지 못했습니다: ' + r.error, 'err'); draw(S.cliBin); return; }
+      S.cliBin = r.data;
+      draw(S.cliBin);
+      if (what === 'install') toast(r.data.pathError ? r.data.pathError : '설치했습니다. 새로 여는 터미널에서 exaone 을 실행하세요', r.data.pathError ? 'err' : undefined);
+      else toast('exaone 명령을 제거했습니다');
+      if (S.conv && !S.conv.messages.length) renderConv();
+    };
+    draw(S.cliBin);
+    refreshCliBin().then(() => draw(S.cliBin));
+    return [
+      h('h3', { text: '터미널 명령 (exaone)' }),
+      info,
+      actions,
+      detail,
+      note('설치하면 사용자 폴더에 실행 파일(런처)을 만들고 그 폴더를 PATH 에 넣습니다. 관리자 권한은 필요 없고, 이미 열려 있는 터미널은 다시 열어야 합니다. 토큰과 세션 기록은 이 앱과 함께 씁니다.'),
+      h('h3', { text: '쓰는 법' }),
+      h('pre', { class: 'cli-usage', text: 'exaone                 대화형 화면\nexaone -c              마지막 세션 이어서\nexaone -p "지시"       한 번 실행하고 결과만 출력\nexaone --help          옵션 전체' }),
+    ];
+  }
+
   if (id === 'data') {
     const dirRow = (label, dir, hint) => rowField(label, h('button', { class: 'btn sm', onclick: () => exa.open(dir) }, icon('folder', 13), '열기'), hint);
     return [
@@ -1330,6 +1376,12 @@ function settingsSection(id, refresh) {
         h('button', { class: 'btn sm', onclick: () => exa.open('https://docs.exaone.ai') }, icon('ext', 13), 'EXAONE API 문서'))),
     note('터미널에서는 같은 폴더의 exaone-code 로 에이전트를 쓸 수 있습니다 (README 참고).'),
   ];
+}
+
+/** 터미널 명령(exaone)의 설치 상태를 다시 읽는다. */
+async function refreshCliBin() {
+  try { const r = await exa.cliBinStatus(); if (r && r.ok) S.cliBin = r.data; } catch { /* 다음에 다시 */ }
+  return S.cliBin;
 }
 
 function openSettings(section) {

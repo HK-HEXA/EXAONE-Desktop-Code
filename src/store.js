@@ -41,6 +41,7 @@ const DEFAULTS = {
   saveLogs: true,
   autoPreview: true,
   autoProgress: true, // 에이전트가 계획을 세우면 오른쪽 진행 탭을 자동으로 연다
+  notify: 'unfocused', // 작업 완료 · 질문 · 승인 대기 알림: 'unfocused'(창이 뒤에 있을 때만) | 'always' | 'off'
   maxRetries: 10, // 네트워크 문제 · 요청 한도 · 서버 오류로 실패한 요청을 다시 보내는 횟수 (0 이면 다시 시도하지 않음)
   compact: { auto: true }, // 컨텍스트가 한도에 가까워지면 이전 대화를 요약으로 압축 (기준: 창 − 요약용 20K − 여유 13K)
   params: {

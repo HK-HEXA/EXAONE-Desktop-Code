@@ -35,3 +35,7 @@ desktop.ini
 .vs/
 *.swp
 *~
+
+# ── 배포 빌드 때 함께 넣는 Node 실행 파일 ─────────────────
+# release 워크플로가 runtime/node/node.exe 를 준비한다 (저장소에는 넣지 않는다).
+runtime/

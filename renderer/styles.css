@@ -864,3 +864,10 @@ input, textarea { caret-color: var(--focus); }
 /* / 명령 목록: 명령 옆의 인자 예시 (/effort [low|medium|high|max]) */
 .slash-item b { white-space: nowrap; }
 .slash-item b i { font-style: normal; font-weight: 400; color: var(--text-3); }
+
+/* EXAONE Code(터미널 명령) 설치 */
+.cli-actions { margin-bottom: 4px; }
+.cli-info code, .w-cli code { font-family: var(--mono); font-size: 12.5px; padding: 1px 5px; border-radius: 5px; background: var(--bg-hover); }
+.cli-detail { overflow-wrap: anywhere; }
+.cli-usage { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); font-family: var(--mono); font-size: 12.5px; line-height: 1.7; white-space: pre; overflow-x: auto; }
+.w-cli { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }

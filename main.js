@@ -1,10 +1,11 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net, protocol, nativeTheme, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, net, protocol, nativeTheme, Menu, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const sessions = require('./src/sessions');
 const live = require('./src/live');
+const cliInstall = require('./src/cliInstall');
 const crypto = require('crypto');
 
 if (process.env.EXAONE_DATA_DIR) app.setPath('userData', path.resolve(process.env.EXAONE_DATA_DIR));
@@ -170,15 +171,17 @@ function watchCliSessions() {
 function openCliTerminal(cwd, id) {
   if (!/^[\w.:-]+$/.test(String(id))) throw new Error('세션 id 가 올바르지 않습니다');
   if (!cwd || !fs.existsSync(cwd)) throw new Error('작업 폴더를 찾을 수 없습니다: ' + (cwd || '(알 수 없음)'));
-  const appDir = app.getAppPath();
-  const script = path.join(appDir, 'cli', 'exaone-code.js');
+  // 앱이 만든 런처로 실행한다 (PC 에 Node 가 없어도, exaone 명령을 설치하지 않았어도 열린다).
+  const dir = path.join(app.getPath('userData'), 'bin');
+  cliInstall.writeLaunchers(dir, cliInstall.pickRuntime(cliCtx()));
+  const launcher = cliInstall.mainLauncher(dir);
   const command = process.platform === 'win32'
-    ? `cd /d "${cwd}" && "${path.join(appDir, 'exaone.cmd')}" --resume ${id}`
-    : `cd "${cwd}" && node "${script}" --resume ${id}`;
+    ? `cd /d "${cwd}" && "${launcher}" --resume ${id}`
+    : `cd "${cwd}" && "${launcher}" --resume ${id}`;
   let child;
   if (process.platform === 'win32') {
     // cmd /k ""프로그램" 인자" : 바깥 따옴표 한 쌍은 cmd 가 벗겨 낸다.
-    const line = `/d /s /c "start "EXAONE Code" /D "${cwd}" cmd.exe /k ""${path.join(appDir, 'exaone.cmd')}" --resume ${id}""`;
+    const line = `/d /s /c "start "EXAONE Code" /D "${cwd}" cmd.exe /k ""${launcher}" --resume ${id}""`;
     child = spawn(process.env.ComSpec || 'cmd.exe', [line], { cwd, stdio: 'ignore', windowsVerbatimArguments: true, windowsHide: true });
   } else if (process.platform === 'darwin') {
     const esc = (t) => t.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -193,6 +196,44 @@ function openCliTerminal(cwd, id) {
     child.on('spawn', () => { child.unref(); setTimeout(() => finish({ opened: true, command }), 150); });
   });
 }
+
+// ---------- EXAONE Code(터미널 명령) 설치 ----------
+/** 런처가 가리킬 곳: 이 앱의 폴더와 실행 파일, 배포판이면 함께 들어 있는 Node 의 위치. */
+function cliCtx() {
+  return { appDir: app.getAppPath(), execPath: process.execPath, resourcesPath: app.isPackaged ? process.resourcesPath : null };
+}
+/** 터미널(EXAONE Code)이 이 앱을 띄울 수 있게, 실행하는 방법을 설정 폴더에 적어 둔다 (토큰 등록 · "앱에서 열기"). */
+function registerDesktop() {
+  try {
+    cliStore.ensure(cliStore.HOME);
+    fs.writeFileSync(path.join(cliStore.HOME, 'desktop.json'), JSON.stringify({ exe: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()], version: app.getVersion() }, null, 2), 'utf8');
+  } catch { /* 적지 못해도 앱은 뜬다 */ }
+}
+
+// ---------- 알림 ----------
+// 작업이 끝났거나 사용자의 확인(질문 · 승인)을 기다릴 때 시스템 알림을 띄운다.
+// 설정 notify: 'unfocused'(창이 뒤에 있을 때만, 기본) | 'always' | 'off'
+function notifyUser({ title, body, convId, kind }) {
+  const mode = store.getSettings().notify || 'unfocused';
+  if (mode === 'off' || !win || win.isDestroyed()) return false;
+  const focused = win.isFocused() && !win.isMinimized();
+  if (!focused) { try { win.flashFrame(true); } catch { /* 플랫폼 미지원 */ } }
+  if (process.env.EXAONE_NOTIFY_LOG) { try { fs.appendFileSync(process.env.EXAONE_NOTIFY_LOG, JSON.stringify({ title, body, kind, convId, mode, focused }) + '\n'); } catch { /* 시험용 기록 */ } }
+  if (mode !== 'always' && focused) return false;
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({ title: String(title || 'EXAONE Desktop').slice(0, 120), body: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 240), silent: false });
+  n.on('click', () => {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show(); win.focus();
+    win.webContents.send('notify:click', { convId, kind });
+  });
+  n.show();
+  lastNotices.add(n); // 눌러 볼 때까지 사라지지 않게 잡아 둔다
+  setTimeout(() => lastNotices.delete(n), 5 * 60 * 1000);
+  return true;
+}
+const lastNotices = new Set();
 
 function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors;
@@ -236,6 +277,7 @@ function createWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
   win.on('closed', () => { win = null; });
+  win.on('focus', () => { try { win.flashFrame(false); } catch { /* 플랫폼 미지원 */ } });
 }
 
 function buildMenu() {
@@ -442,6 +484,12 @@ function registerIpc() {
     if (!raw.length) throw new Error('세션을 읽지 못했습니다');
     return { messages: sessions.cliToDesktop(raw) };
   }));
+  // EXAONE Code(터미널 명령 exaone) 설치 · 제거
+  const cliAct = (fn) => { try { return { ok: true, data: fn() }; } catch (e) { return { ok: false, error: String(e && e.message || e) }; } };
+  ipcMain.handle('clibin:status', () => cliAct(() => cliInstall.status(cliCtx())));
+  ipcMain.handle('clibin:install', () => cliAct(() => cliInstall.install(cliCtx())));
+  ipcMain.handle('clibin:uninstall', () => cliAct(() => cliInstall.uninstall(cliCtx())));
+  ipcMain.handle('notify', (_e, req) => { try { return notifyUser(req || {}); } catch { return false; } });
   ipcMain.handle('cli:terminal', async (_e, { cwd, id }) => {
     try { return { ok: true, data: await openCliTerminal(cwd, id) }; }
     catch (e) { return { ok: false, error: String(e && e.message || e) }; }
@@ -469,6 +517,8 @@ function registerIpc() {
 }
 
 // ---------- 시작 ----------
+// Windows 알림은 앱 식별자가 있어야 뜬다. 설치판은 설치 프로그램이 등록한 식별자, 개발 실행은 실행 파일 경로를 쓴다.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'ai.exaone.desktop' : process.execPath);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -486,6 +536,9 @@ if (!app.requestSingleInstanceLock()) {
     cliHistory = new History(path.join(cliStore.HOME, 'file-history'));
     migrateKey();
     watchCliSessions();
+    registerDesktop();
+    // exaone 명령을 설치해 두었는데 앱 위치가 바뀌었으면(업데이트 · 폴더 이동) 런처를 새로 쓴다.
+    setTimeout(() => { try { cliInstall.refresh(cliCtx()); } catch { /* 설정 화면에서 다시 설치할 수 있다 */ } }, 1500);
     nativeTheme.themeSource = store.getSettings().theme || 'system';
 
     protocol.handle('exa-preview', (req) => {

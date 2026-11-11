@@ -30,6 +30,18 @@ function removeKey() { try { fs.unlinkSync(keyFile()); return true; } catch { re
 /** 데스크톱 앱을 띄운다 (args 예: ['--register-token'] → 토큰 등록 화면). 띄우지 못하면 { ok: false, reason }. */
 function openDesktopApp(args = []) {
   const appDir = path.resolve(__dirname, '..');
+  const spawnApp = (bin, argv) => {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const child = require('child_process').spawn(bin, argv, { detached: true, stdio: 'ignore', env });
+    child.on('error', () => {});
+    child.unref();
+  };
+  // 데스크톱 앱이 실행될 때 적어 둔 실행 방법 (설치판은 실행 파일 하나, 개발 실행은 electron + 앱 폴더)
+  const reg = readJson(path.join(HOME, 'desktop.json'), null);
+  if (reg && typeof reg.exe === 'string' && fs.existsSync(reg.exe)) {
+    try { spawnApp(reg.exe, [...(Array.isArray(reg.args) ? reg.args : []), ...args]); return { ok: true }; } catch { /* 아래 방법으로 */ }
+  }
   let bin = '';
   try { bin = require(path.join(appDir, 'node_modules', 'electron')); } catch { /* 아직 설치 전 */ }
   if (typeof bin !== 'string' || !bin || !fs.existsSync(bin)) return { ok: false, reason: '데스크톱 앱이 아직 설치되어 있지 않습니다. ' + path.join(appDir, 'start.bat') + ' 을 한 번 실행하세요' };

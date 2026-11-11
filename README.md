@@ -5,16 +5,58 @@ LG AI연구원 EXAONE API(K-EXAONE 2.5, EXAONE Tabular)를 시험해 보기 위�
 - **EXAONE Desktop** — Electron 데스크톱 앱. EXAONE 공식 Showroom의 워드마크와 흰색·차콜·라벤더 색상을 적용했습니다.
 - **EXAONE Code** — 터미널에서 쓰는 에이전트(`exaone` 명령). 같은 API 클라이언트와 도구를 쓰며, EXAONE Code 이름과 라벤더 포인트를 사용합니다.
 
-## 실행
+## 다운로드
+
+| 운영체제 | 받기 |
+|---|---|
+| Windows 10 · 11 (64비트) | [**EXAONE-Desktop-Setup.exe**](https://github.com/HK-HEXA/EXAONE-Desktop-Code/releases/latest/download/EXAONE-Desktop-Setup.exe) — [전체 릴리스 목록](https://github.com/HK-HEXA/EXAONE-Desktop-Code/releases) |
+
+- 설치 파일 하나로 데스크톱 앱이 설치됩니다. Node.js 를 따로 설치할 필요가 없습니다.
+- 터미널에서 쓰는 **EXAONE Code** 는 앱 안에서 설치합니다: **설정 → EXAONE Code → 설치**. 새로 여는 터미널부터 어느 폴더에서나 `exaone` 을 쓸 수 있습니다.
+- 서명하지 않은 설치 파일이라 Windows 가 "PC 보호" 경고를 띄울 수 있습니다. **추가 정보 → 실행** 을 누르면 설치됩니다.
+- macOS · Linux 용 설치 파일은 아직 제공하지 않습니다. 아래 "소스에서 실행" 으로 쓸 수 있습니다.
+
+## 소스에서 실행
 
 Node.js 22.12 이상이 필요합니다.
 
 | | 방법 |
 |---|---|
 | 데스크톱 앱 | `start.bat` 더블클릭 (또는 `npm install` 후 `npm start`) |
-| 터미널 에이전트 | `install-cli.bat` 을 한 번 실행한 뒤, 새 터미널의 작업할 폴더에서 `exaone` |
+| 터미널 에이전트 | 데스크톱 앱의 **설정 → EXAONE Code → 설치** (또는 `install-cli.bat` 을 한 번 실행). 그 뒤 새 터미널의 작업할 폴더에서 `exaone` |
 
 데스크톱 앱은 첫 실행 때 Electron 런타임(약 100MB)을 내려받습니다. 터미널 에이전트는 `npm install` 없이도 동작합니다.
+
+### EXAONE Code 설치 (앱에서)
+
+설정 → **EXAONE Code** 의 **설치** 를 누르면
+
+1. 사용자 폴더에 실행 파일(런처)을 만듭니다 — Windows `%LOCALAPPDATA%\EXAONE\bin\exaone.cmd`, macOS · Linux `~/.local/bin/exaone`
+2. 그 폴더를 사용자 PATH 에 넣습니다 (Windows 는 사용자 환경 변수, 그 밖은 셸 설정 파일). 관리자 권한은 필요 없습니다.
+
+이미 열려 있는 터미널은 다시 열어야 합니다. 실행에 쓰는 Node 는 ① 설치판에 함께 들어 있는 Node → ② PC 에 설치된 Node(22.12 이상) → ③ 앱 자체 순으로 고르므로 PC 에 Node 가 없어도 됩니다. 앱을 업데이트하거나 폴더를 옮기면 다음 실행 때 런처를 알아서 고칩니다. **제거** 를 누르면 런처와 PATH 항목을 지웁니다.
+
+### 알림
+
+작업이 끝났거나 질문 · 승인을 기다릴 때 알려 줍니다.
+
+- **데스크톱 앱**: 시스템 알림 + 작업 표시줄 깜박임. 기본은 창이 뒤에 있을 때만이고, 설정 → 일반 → 알림에서 "항상" 이나 "끄기" 로 바꿉니다. 알림을 누르면 그 대화가 열립니다.
+- **터미널**: 벨 + 시스템 알림. 터미널 창이 앞에 있으면 알리지 않습니다. 창의 포커스를 알려 주지 않는 터미널에서는 10초 넘게 걸린 작업이 끝났을 때와, 질문 · 권한 확인에 6초 동안 답이 없을 때 알립니다. `/config` 에서 끕니다 (또는 환경 변수 `EXAONE_NOTIFY=0`).
+
+## 배포 (Windows 설치 파일 만들기)
+
+`v` 로 시작하는 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 Windows 설치 파일을 빌드해 그 태그의 Release 에 올립니다.
+
+```
+# package.json 의 version 을 올린 뒤
+git tag v0.8.0
+git push origin main v0.8.0
+```
+
+- 태그와 `package.json` 의 버전이 다르면 빌드를 멈춥니다.
+- Actions 탭의 **Release (Windows) → Run workflow** 로 직접 돌릴 수도 있습니다. 태그를 비우면 빌드만 해서 산출물(Artifacts)로 남깁니다.
+- 직접 빌드: Windows 에서 `npm install` 후 `npm run dist` → `dist\EXAONE-Desktop-Setup.exe`. (Node 를 함께 넣으려면 빌드 전에 `runtime\node\node.exe` 를 두세요. 없으면 PC 의 Node 나 앱 자체로 실행합니다.)
+- macOS 빌드는 아직 구성하지 않았습니다.
 
 ## 토큰 (API 키) 등록
 
@@ -168,6 +210,9 @@ src/history.js       파일 버전 기록 (대화별 내용 주소 저장소)
 src/store.js         설정·대화 저장
 src/sessions.js      터미널 세션 ↔ 앱 대화 변환, Code 탭의 세션 읽기·쓰기
 src/live.js          실시간 연동 (작업 중인 내용을 <세션>.live 로 주고받기)
+src/cliInstall.js    터미널 명령(exaone) 설치 · 제거 (런처 만들기, PATH 등록)
+cli/notify.js        터미널 알림 (벨 · 시스템 알림 · 포커스 확인)
+.github/workflows/   Windows 설치 파일 빌드 · Release
 renderer/js/retry.js 실패한 요청을 다시 보내는 규칙 (앱 · 터미널 공용)
 cli/                 터미널 에이전트 (exaone-code.js 진입점, tui.js 화면, agent.js 루프·권한, markdown.js, term.js, store.js)
 renderer/            화면 (프레임워크 없이 HTML/CSS/JS)

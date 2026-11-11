@@ -217,7 +217,14 @@
   exa.onLiveEvents(({ sid, events }) => onLiveEvents(sid, events));
   exa.onLiveStop(({ sid }) => { if (S.busy && S.run && S.run.conv.code && S.run.conv.code.id === sid) stopRun(); });
   setInterval(() => { if (S.conv && S.conv.code && !S.busy && S.view === 'chat') syncCodeConv(); }, 1500);
-  exa.onTokenRequest(() => openTokenDialog()); // 터미널(EXAONE Code)이 토큰 등록을 요청했을 때
+  exa.onTokenRequest(() => openTokenDialog());
+  // 알림을 누르면 그 대화를 연다.
+  exa.onNotifyClick(({ convId }) => {
+    if (!convId || (S.conv && S.conv.id === convId)) { setView('chat'); return; }
+    if (S.busy) return; // 다른 작업이 진행 중이면 화면을 바꾸지 않는다
+    openConv(convId).catch(() => {});
+  });
+  refreshCliBin().then(() => { if (S.conv && S.conv.code && !S.conv.messages.length) renderConv(); }); // 터미널(EXAONE Code)이 토큰 등록을 요청했을 때
 
   // ----- 첫 화면 -----
   renderRate();
