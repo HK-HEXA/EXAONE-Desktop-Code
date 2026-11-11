@@ -1,0 +1,92 @@
+# Windows 설치 파일을 빌드해 GitHub Release 에 올린다.
+#
+#   · v 로 시작하는 태그를 올리면 자동 실행:   git tag v0.8.0 && git push origin v0.8.0
+#   · Actions 탭에서 직접 실행(Run workflow): 태그를 적으면 그 태그로 릴리스, 비우면 빌드만 해서 산출물로 남김
+#
+# macOS · Linux 빌드는 아직 넣지 않았다 (Windows 만).
+name: Release (Windows)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '릴리스할 태그 (예: v0.8.0). 비우면 빌드만 하고 Release 는 만들지 않습니다.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows 설치 파일
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 태그와 package.json 의 버전이 같은지 확인
+        if: env.TAG != ''
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::태그($TAG)와 package.json 의 버전(v$version)이 다릅니다. package.json 의 version 을 맞춘 뒤 다시 태그하세요."
+            exit 1
+          fi
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # EXAONE Code(터미널 명령)를 PC 에 Node 가 없어도 쓸 수 있게, 설치 파일에 Node 실행 파일을 함께 넣는다.
+      - name: 함께 넣을 Node 준비
+        shell: pwsh
+        run: |
+          $node = (Get-Command node.exe).Source
+          New-Item -ItemType Directory -Force runtime/node | Out-Null
+          Copy-Item $node runtime/node/node.exe
+          $license = Join-Path (Split-Path $node) 'LICENSE'
+          if (Test-Path $license) { Copy-Item $license runtime/node/LICENSE }
+          & runtime/node/node.exe -v
+
+      - name: 설치 파일 빌드
+        run: npx electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: 빌드 결과 확인
+        shell: bash
+        run: ls -la dist/*.exe
+
+      - name: 산출물 보관
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXAONE-Desktop-Setup
+          path: dist/EXAONE-Desktop-Setup.exe
+          if-no-files-found: error
+
+      - name: Release 에 올리기
+        if: env.TAG != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/EXAONE-Desktop-Setup.exe --clobber
+          else
+            gh release create "$TAG" dist/EXAONE-Desktop-Setup.exe --title "EXAONE Desktop $TAG" --generate-notes --verify-tag
+          fi
