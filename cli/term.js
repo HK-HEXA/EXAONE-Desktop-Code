@@ -18,6 +18,8 @@ const c = {
   bash: sgr('38;5;205', 39),
   memory: sgr('38;5;75', 39),
   bgAdd: sgr('48;5;22', 49), bgDel: sgr('48;5;52', 49), bgUser: sgr('48;5;237', 49),
+  /** 전경색 코드를 직접 지정 (구문 강조용) */
+  colorize: (code, s) => (colorOn ? `\x1b[${code}m${s}\x1b[39m` : String(s)),
 };
 
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;

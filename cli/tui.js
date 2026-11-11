@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 
 const { c, strWidth, charWidth, truncate, padEnd, wrapAnsi, box, Screen } = require('./term');
 const md = require('./markdown');
+const hl = require('./highlight');
 const store = require('./store');
 const tools = require('../src/tools');
 const sessions = require('../src/sessions');
@@ -194,6 +195,37 @@ class InputModal {
   }
 }
 
+// ---------- 폴더 신뢰 확인 ----------
+// 처음 여는 폴더에서 Claude Code 처럼 "이 폴더를 신뢰하나요?" 를 묻는다. 0 = 아니요(종료), 1 = 예
+class TrustModal {
+  constructor(cwd) {
+    this.cwd = cwd;
+    this.idx = 0;
+    this.options = ['아니요, 종료', '예, 이 폴더를 신뢰합니다'];
+    this.promise = new Promise((res) => { this.resolve = res; });
+  }
+
+  render(cols) {
+    const w = Math.max(20, cols - 3);
+    const lines = [c.warn('─'.repeat(w + 1)), ' ' + c.bold(c.warn('작업 폴더 접근:')), ''];
+    lines.push(...wrapAnsi(this.cwd, w).map((l) => ' ' + l), '');
+    lines.push(...wrapAnsi('간단한 안전 확인: 직접 만들었거나 신뢰하는 프로젝트인가요? (본인의 코드, 잘 알려진 오픈소스 프로젝트, 팀의 작업물 등) 그렇지 않다면 먼저 이 폴더에 무엇이 있는지 확인해 보세요.', w).map((l) => ' ' + l), '');
+    lines.push(...wrapAnsi('EXAONE Code 가 이 폴더의 파일을 읽고, 수정하고, 실행할 수 있게 됩니다.', w).map((l) => ' ' + l), '');
+    this.options.forEach((o, i) => lines.push(i === this.idx ? ' ' + c.brand('❯ ' + o) : '   ' + o));
+    lines.push('', ' ' + c.dim('Enter 로 확인 · Esc 로 취소'));
+    return { lines, cursor: null };
+  }
+
+  onKey(str, key) {
+    const k = key || {};
+    if (k.name === 'up' || k.name === 'down' || k.name === 'tab' || (k.ctrl && (k.name === 'p' || k.name === 'n'))) this.idx = 1 - this.idx;
+    else if (k.name === 'return' || k.name === 'enter') return this.resolve(this.idx);
+    else if (k.name === 'escape' || (k.ctrl && k.name === 'c')) return this.resolve(0);
+    else if (str === '1' || str === '2') return this.resolve(Number(str) - 1);
+    return undefined;
+  }
+}
+
 // ---------- 도구 결과 표시 ----------
 function diffLines(text, width, max) {
   const res = [];
@@ -213,6 +245,44 @@ function diffLines(text, width, max) {
   return res;
 }
 
+/** 새로 작성한 파일의 앞부분: 줄 번호 + 구문 강조, 나머지는 "… +N줄" */
+function filePreview(file, content, width, max) {
+  const all = String(content || '').replace(/\n$/, '').split('\n');
+  const lang = hl.langOf(file);
+  const nw = String(Math.min(all.length, max)).length + 1;
+  const res = all.slice(0, max).map((l, i) => c.dim(String(i + 1).padStart(nw)) + ' ' + truncate(hl.highlightLine(l.replace(/\t/g, '  '), lang), Math.max(10, width - nw - 1)));
+  if (all.length > max) res.push(c.dim(`… +${fmtNum(all.length - max)}줄`));
+  return res;
+}
+
+/** 접힌 보기에서 이어진 도구 호출들을 한 줄로: "파일 2개 읽음, 명령 1회 실행함, 파일 1개 수정함 +60" */
+function groupSummary(items) {
+  const order = [];
+  const acc = new Map();
+  const kind = (n) => (n === 'find_files' || n === 'search_files' ? 'search' : n);
+  for (const it of items) {
+    const k = kind(it.name);
+    if (!acc.has(k)) { acc.set(k, { n: 0, paths: new Set(), added: 0, removed: 0, label: it.label }); order.push(k); }
+    const a = acc.get(k);
+    a.n++;
+    if (it.path) a.paths.add(it.path);
+    a.added += it.added || 0; a.removed += it.removed || 0;
+  }
+  return order.map((k) => {
+    const a = acc.get(k);
+    const files = a.paths.size || a.n;
+    switch (k) {
+      case 'read_file': return `파일 ${files}개 읽음`;
+      case 'list_dir': return `폴더 ${files}개 살펴봄`;
+      case 'search': return `${a.n}회 검색함`;
+      case 'run_command': return `명령 ${a.n}회 실행함`;
+      case 'edit_file': return `파일 ${files}개 수정함` + (a.added ? ' ' + c.green('+' + a.added) : '') + (a.removed ? ' ' + c.red('-' + a.removed) : '');
+      case 'web_fetch': return `웹 페이지 ${a.n}개 가져옴`;
+      default: return `${a.label} ${a.n}회`;
+    }
+  }).join(', ');
+}
+
 function todoLines(steps) {
   return (Array.isArray(steps) ? steps : []).map((s) => (s && s.status === 'done' ? c.green('☒ ') + c.dim(c.strike(String(s.title)))
     : s && s.status === 'in_progress' ? c.brand('◼ ') + c.bold(String(s.title)) : '☐ ' + String(s && s.title)));
@@ -225,7 +295,7 @@ function toolSummary(name, a, res) {
   if (!res.ok) return { error: String(res.content || '').replace(/^오류:\s*/, '').split('\n').filter(Boolean).slice(-1)[0] || '실패' };
   switch (name) {
     case 'read_file': return { text: `${fmtNum((m.to || 0) - (m.from || 1) + 1)}줄 읽음` };
-    case 'write_file': return { text: `${fmtNum(n(a.content))}줄을 ${a.path} 에 ${m.created ? '새로 작성' : '덮어씀'}` };
+    case 'write_file': return { text: `${fmtNum(n(a.content))}줄을 ${a.path} 에 ${m.created ? '작성함' : '덮어씀'}` };
     case 'edit_file': return { text: `${a.path} 수정: ${m.added}줄 추가, ${m.removed}줄 삭제` };
     case 'run_command': { const body = String(res.content).replace(/\n?\[exit code \d+\]$/, ''); return { text: body.trim() ? `${fmtNum(n(body))}줄 출력` : '(출력 없음)' }; }
     case 'list_dir': return { text: `${fmtNum(m.count)}개 항목` };
@@ -457,7 +527,7 @@ class App {
       this.sub([it.error ? c.red(it.error) : it.text + (it.expandable ? c.dim(' (ctrl+o 로 펼치기)') : '')]);
       return;
     }
-    this.block([c.bold(g.label) + ` ${g.items.length}회` + (bad ? c.red(` · 실패 ${bad}`) : '') + c.dim(' (ctrl+o 로 펼치기)')], bullet);
+    this.block([groupSummary(g.items) + (bad ? c.red(` · 실패 ${bad}`) : '') + c.dim(' (ctrl+o 로 펼치기)')], bullet);
   }
 
   flushThinking() {
@@ -526,7 +596,8 @@ class App {
     }
     if (this.group && this.group.items.length) {
       const g = this.group, last = g.items[g.items.length - 1];
-      lines.push('', c.dim('● ') + (g.items.length > 1 ? c.bold(g.label) + ` ${g.items.length}회` + c.dim('  최근: ') : '') + truncate(last.head, cols - 24));
+      if (g.items.length > 1) lines.push('', c.dim('● ') + truncate(groupSummary(g.items), cols - 4), c.dim('  ⎿  ') + truncate(last.head, cols - 8));
+      else lines.push('', c.dim('● ') + truncate(last.head, cols - 4));
     }
     if (this.running && !this.modalObj) {
       lines.push('', (this.frame % 8 < 4 ? c.dim('●') : c.white('●')) + ' ' + c.bold(this.running.title.label) + (this.running.title.arg ? `(${truncate(this.running.title.arg, cols - 20)})` : ''));
@@ -779,7 +850,7 @@ class App {
       reasoning(d) { if (app.spinner) app.spinner.chars += d.length; },
       thinkingEnd(ms, text) {
         app.blockOpen = false;
-        if (!app.verbose) { app.thinkAcc = (app.thinkAcc || 0) + ms; return; } // 접힌 보기: 시간만 모아 둔다
+        if (!app.verbose) return; // 접힌 보기: 추론 과정은 남기지 않는다 (ctrl+o 로 자세히 보기)
         app.say('');
         app.say(c.dim(`∴ ${fmtElapsed(ms, true)} 동안 생각함`));
         for (const l of wrapAnsi(text.trim(), app.textWidth)) app.say(c.dim(c.italic('  ' + l)));
@@ -803,16 +874,24 @@ class App {
         const s = toolSummary(tc.name, a, res);
         const head = c.bold(title.label) + (title.arg ? `(${truncate(title.arg, Math.max(20, app.cols - strWidth(title.label) - 8))})` : '');
         const detail0 = toolDetail(tc.name, a, res, Math.max(20, app.cols - 8));
-        if (!app.verbose && tc.name !== 'update_plan' && tc.name !== 'ask_user') {
-          // 접힌 보기: 같은 도구가 이어지면 한 묶음으로
-          if (app.group && app.group.name !== tc.name) app.flushGroup();
-          if (!app.group) app.group = { name: tc.name, label: title.label, items: [] };
-          app.group.items.push({ head, ok: !!res.ok, text: s.text, error: s.error, expandable: detail0.length > 0 });
+        const isWrite = tc.name === 'write_file' && res.ok;
+        if (!app.verbose && !isWrite && tc.name !== 'update_plan' && tc.name !== 'ask_user') {
+          // 접힌 보기: 이어진 도구 호출은 종류가 달라도 한 묶음으로 모아 한 줄로 요약한다
+          if (!app.group) app.group = { items: [] };
+          const m = res.meta || {};
+          app.group.items.push({ name: tc.name, label: title.label, path: a.path, added: m.added, removed: m.removed, head, ok: !!res.ok, text: s.text, error: s.error, expandable: detail0.length > 0 });
           return app.render();
         }
         app.flushSteps();
         app.block([head], res.ok ? c.green('●') : c.red('●'));
-        if (tc.name === 'update_plan' && res.ok) app.sub(todoLines(a.steps));
+        if (isWrite) {
+          // Write(파일) / ⎿ N줄 작성 / 앞부분 미리보기(줄 번호 · 구문 강조)
+          const m = res.meta || {};
+          app.sub([s.text]);
+          const w = Math.max(20, app.cols - 8);
+          const body = m.created ? filePreview(a.path, a.content, w, app.verbose ? 200 : 10) : (m.diff ? diffLines(m.diff, w, app.verbose ? 200 : 16) : []);
+          for (const l of body) app.say('     ' + l);
+        } else if (tc.name === 'update_plan' && res.ok) app.sub(todoLines(a.steps));
         else if (s.error) app.sub([c.red(truncate(s.error, app.cols - 8))]);
         else {
           const detail = toolDetail(tc.name, a, res, Math.max(20, app.cols - 8));
@@ -1351,6 +1430,15 @@ class App {
     process.on('exit', () => { try { process.stdout.write('\x1b[?1004l\x1b[?2004l\x1b[?25h'); } catch { /* 무시 */ } });
     // 시작할 때 터미널을 비우고 맨 위에서부터 그린다 (이전 출력 아래에 이어 붙지 않게).
     this.clearScreen();
+    // 처음 여는 폴더: 이 폴더를 신뢰하는지 먼저 묻는다. 아니요 · Esc 면 종료.
+    if (!store.isTrusted(this.cwd)) {
+      this.screen.anchor = false; // 확인 화면은 맨 위에서부터 보여 준다
+      const v = await this.modal(new TrustModal(this.cwd));
+      this.screen.anchor = true;
+      if (v !== 1) return this.exit(0);
+      store.trustFolder(this.cwd);
+      this.clearScreen();
+    }
     this.banner();
     if (this.agent.messages.length) this.replay();
     this.render();

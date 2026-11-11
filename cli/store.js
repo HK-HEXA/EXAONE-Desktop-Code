@@ -230,7 +230,27 @@ function customCommands(cwd) {
   return res;
 }
 
+// ---------- 폴더 신뢰 ----------
+// 처음 여는 폴더는 "이 폴더를 신뢰하나요?" 를 먼저 묻는다. 신뢰한 폴더(와 그 하위 폴더)는 다시 묻지 않는다.
+// 사용자 홈 폴더 자체는 기억하지 않는다 (하위의 모든 폴더가 신뢰되는 것을 막기 위해).
+const trustFile = () => path.join(HOME, 'trusted-folders.json');
+const normDir = (dir) => { const r = path.resolve(dir).replace(/[\\/]+$/, '') || path.resolve(dir); return process.platform === 'win32' ? r.toLowerCase() : r; };
+function isTrusted(cwd) {
+  const list = readJson(trustFile(), []);
+  if (!Array.isArray(list)) return false;
+  const d = normDir(cwd);
+  return list.some((t) => { const n = normDir(String(t)); return d === n || d.startsWith(n.endsWith(path.sep) ? n : n + path.sep); });
+}
+function trustFolder(cwd) {
+  if (normDir(cwd) === normDir(os.homedir())) return false;
+  const list = readJson(trustFile(), []);
+  const arr = Array.isArray(list) ? list : [];
+  if (!arr.some((t) => normDir(String(t)) === normDir(cwd))) { arr.push(path.resolve(cwd)); writeJson(trustFile(), arr); }
+  return true;
+}
+
 module.exports = {
+  isTrusted, trustFolder,
   HOME, ensure, readJson, writeJson, findKey, saveKey, removeKey, keyFile, openDesktopApp,
   settingsFiles, loadSettings, saveUserSetting, addAllowRule,
   Session, projectDir, memoryFiles, appendMemory, loadHistory, appendHistory, customCommands,

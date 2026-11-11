@@ -29,7 +29,7 @@ function block(line, width) {
   m = /^(\s*)([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/.exec(line);
   if (m) {
     const indent = ' '.repeat(Math.min(m[1].length, 12));
-    const mark = /^\d/.test(m[2]) ? m[2] : '•';
+    const mark = /^\d/.test(m[2]) ? m[2] : '-';
     const box = m[3] ? (/x/i.test(m[3]) ? '☒ ' : '☐ ') : '';
     const head = indent + (box || mark + ' ');
     const pad = ' '.repeat(strWidth(head));
@@ -38,19 +38,39 @@ function block(line, width) {
   return wrapAnsi(inline(line), width);
 }
 
+/** Markdown 표 → 상자 그림 표 (Claude Code 처럼 머리글은 가운데, 줄마다 구분선). 폭이 모자라면 칸 안에서 줄을 바꾼다. */
 function table(rows, width) {
   const cells = rows.map((r) => r.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
-  const body = cells.filter((r) => !r.every((x) => /^:?-{2,}:?$/.test(x) || x === ''));
+  const isSep = (r) => r.every((x) => /^:?-{2,}:?$/.test(x) || x === '');
+  const sep = cells.find(isSep);
+  const body = cells.filter((r) => !isSep(r));
   if (!body.length) return [];
   const n = Math.max(...body.map((r) => r.length));
-  const data = body.map((r) => Array.from({ length: n }, (_, i) => inline(r[i] || '')));
+  const align = (i) => (sep && sep[i] ? (/^:-+:$/.test(sep[i]) ? 'center' : /-:$/.test(sep[i]) ? 'right' : 'left') : 'left');
+  const data = body.map((r, ri) => Array.from({ length: n }, (_, i) => (ri === 0 ? c.bold(inline(r[i] || '')) : inline(r[i] || ''))));
   const widths = Array.from({ length: n }, (_, i) => Math.max(1, ...data.map((r) => strWidth(r[i]))));
-  if (widths.reduce((a, b) => a + b, 0) + 3 * n + 1 > width) return rows.flatMap((r) => wrapAnsi(inline(r), width));
+  const avail = width - (3 * n + 1);
+  if (avail < 4 * n) return rows.flatMap((r) => wrapAnsi(inline(r), width));
+  // 가장 넓은 칸부터 줄여서 화면 폭에 맞춘다.
+  while (widths.reduce((a, b) => a + b, 0) > avail) {
+    let k = 0;
+    for (let i = 1; i < n; i++) if (widths[i] > widths[k]) k = i;
+    widths[k]--;
+  }
+  const pad = (s, w, how) => {
+    const gap = Math.max(0, w - strWidth(s));
+    if (how === 'center') { const l = Math.floor(gap / 2); return ' '.repeat(l) + s + ' '.repeat(gap - l); }
+    return how === 'right' ? ' '.repeat(gap) + s : s + ' '.repeat(gap);
+  };
   const rule = (l, m, r) => c.dim(l + widths.map((w) => '─'.repeat(w + 2)).join(m) + r);
   const res = [rule('┌', '┬', '┐')];
-  data.forEach((r, i) => {
-    res.push(c.dim('│') + r.map((x, j) => ' ' + padEnd(i === 0 ? c.bold(x) : x, widths[j]) + ' ').join(c.dim('│')) + c.dim('│'));
-    if (i === 0 && data.length > 1) res.push(rule('├', '┼', '┤'));
+  data.forEach((r, ri) => {
+    const wrapped = r.map((x, j) => wrapAnsi(x, widths[j]));
+    const h = Math.max(...wrapped.map((x) => x.length));
+    for (let li = 0; li < h; li++) {
+      res.push(c.dim('│') + wrapped.map((x, j) => ' ' + pad(x[li] || '', widths[j], ri === 0 ? 'center' : align(j)) + ' ').join(c.dim('│')) + c.dim('│'));
+    }
+    if (ri < data.length - 1) res.push(rule('├', '┼', '┤'));
   });
   res.push(rule('└', '┴', '┘'));
   return res;
