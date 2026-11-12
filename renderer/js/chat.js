@@ -11,8 +11,8 @@ const S = {
   env: {},
   convs: [],
   conv: null,
-  busy: false,
-  run: null,
+  runs: new Map(),      // 대화 id -> 실행 중인 작업 { conv, aborted, reqId, … } (여러 대화가 동시에 응답할 수 있다)
+  unseen: new Set(),    // 다른 화면을 보는 사이에 응답이 끝난 대화 (사이드바에 점)
   view: 'chat',
   home: false,          // 프로젝트 홈(프로젝트에 속한 빈 대화)을 보여 주는 중인가
   attachments: [],
@@ -23,6 +23,10 @@ const S = {
   cliSessions: [],      // EXAONE Code(터미널) 세션 목록
   remote: null,         // 열어 둔 Code 세션에서 터미널이 실행 중인 작업 { n, conv, asst, last, … }
 };
+
+// 지금 보고 있는 대화의 실행 · 실행 중 여부 (다른 대화의 작업은 S.runs 에서 따로 이어진다)
+Object.defineProperty(S, 'run', { get() { return (S.conv && S.runs.get(S.conv.id)) || null; } });
+Object.defineProperty(S, 'busy', { get() { return !!(S.conv && S.runs.has(S.conv.id)); } });
 
 const msgEls = new Map();      // message id -> element
 const toolState = new Map();   // tool call id -> { status, live, resolve }
@@ -81,7 +85,6 @@ function curTab() { return S.settings.ui && S.settings.ui.tab === 'code' ? 'code
 const codeSid = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + '-' + Math.random().toString(36).slice(2, 6);
 
 function newConv(projectId) {
-  if (S.busy) stopRun();
   if (curTab() === 'code') {
     // Code 탭의 대화는 터미널의 EXAONE Code 와 같은 세션 파일에 기록된다 (id 형식도 같다).
     const sid = codeSid();
@@ -104,6 +107,7 @@ function newConv(projectId) {
   setView('chat');
   renderConv();
   renderChrome();
+  syncBusy(); // 옮겨 간 대화가 응답 중인지에 맞춰 보내기/중지 버튼을 바꾼다
   renderConvList();
   refreshChangesPanel();
   refreshFilesPanel();
@@ -113,12 +117,20 @@ function newConv(projectId) {
 
 async function openConv(id) {
   if (S.conv && S.conv.id === id) { setView('chat'); return; }
-  if (S.busy) stopRun();
-  await flushPersist(id); // 방금 전의 변경이 아직 저장되지 않았다면 먼저 저장한다
-  const c = await exa.loadConv(id);
-  if (!c) { toast('대화를 불러오지 못했습니다', 'err'); return; }
-  for (const m of c.messages) { if (m.streaming) m.streaming = false; }
-  c.messages = c.messages.filter((m) => !(m.role === 'compact' && !m.summary));
+  S.unseen.delete(id);
+  // 응답 중인 대화는 디스크에서 다시 읽지 않고, 작업이 쓰고 있는 그 대화를 그대로 보여 준다.
+  const running = S.runs.get(id);
+  let c = running ? running.conv : null;
+  if (!c) {
+    await flushPersist(id); // 방금 전의 변경이 아직 저장되지 않았다면 먼저 저장한다
+    c = await exa.loadConv(id);
+    if (!c) { toast('대화를 불러오지 못했습니다', 'err'); return; }
+    if (S.runs.has(id)) c = S.runs.get(id).conv; // 읽는 사이에 시작된 작업
+    else {
+      for (const m of c.messages) { if (m.streaming) m.streaming = false; }
+      c.messages = c.messages.filter((m) => !(m.role === 'compact' && !m.summary));
+    }
+  }
   c.mode = c.mode === 'agent' ? 'agent' : 'chat';
   const tab = c.code ? 'code' : 'chat';
   if (curTab() !== tab) saveSettings({ ui: { tab } });
@@ -129,6 +141,7 @@ async function openConv(id) {
   setView('chat');
   renderConv();
   renderChrome();
+  syncBusy(); // 옮겨 간 대화가 응답 중인지에 맞춰 보내기/중지 버튼을 바꾼다
   renderConvList();
   refreshChangesPanel();
   refreshFilesPanel();
@@ -170,28 +183,31 @@ async function syncCodeConvNow(conv, force) {
 // ---------- 실시간 연동 (Code 탭 ↔ 터미널) ----------
 // 앱이 실행하는 작업은 터미널이 그대로 따라 그릴 수 있게 알리고(liveEmit),
 // 터미널이 실행하는 작업은 여기서 그대로 따라 그린다(applyLive).
-const liveOut = { sid: null, q: [], timer: null };
-function liveFlush() {
-  clearTimeout(liveOut.timer);
-  liveOut.timer = null;
-  if (liveOut.sid && liveOut.q.length) exa.liveEmit(liveOut.sid, liveOut.q.splice(0));
+// 여러 Code 세션이 동시에 작업할 수 있으므로 세션마다 통로를 따로 둔다.
+const liveOuts = new Map(); // 세션 id -> { sid, q, timer }
+const liveOf = (conv) => (conv && conv.code ? liveOuts.get(conv.code.id) || null : null);
+function liveFlush(lo) {
+  clearTimeout(lo.timer);
+  lo.timer = null;
+  if (lo.q.length) exa.liveEmit(lo.sid, lo.q.splice(0));
 }
-function liveEmit(t, ...a) {
-  if (!liveOut.sid) return;
-  liveOut.q.push({ t, a });
-  if (!liveOut.timer) liveOut.timer = setTimeout(liveFlush, 40);
+function liveEmit(conv, t, ...a) {
+  const lo = liveOf(conv);
+  if (!lo) return;
+  lo.q.push({ t, a });
+  if (!lo.timer) lo.timer = setTimeout(() => liveFlush(lo), 40);
 }
 async function liveStart(conv, display) {
-  if (!conv.code || liveOut.sid) return;
-  try { if (await exa.liveBegin({ sid: conv.code.id, cwd: conv.workspace, info: { display } })) liveOut.sid = conv.code.id; } catch { /* 알리지 못해도 작업은 한다 */ }
+  if (!conv.code || liveOf(conv)) return;
+  try { if (await exa.liveBegin({ sid: conv.code.id, cwd: conv.workspace, info: { display } })) liveOuts.set(conv.code.id, { sid: conv.code.id, q: [], timer: null }); } catch { /* 알리지 못해도 작업은 한다 */ }
 }
-async function liveFinish(stats) {
-  if (!liveOut.sid) return;
-  liveEmit('turnEnd', stats || {});
-  liveFlush();
-  const sid = liveOut.sid;
-  liveOut.sid = null;
-  try { await exa.liveEnd(sid); } catch { /* 무시 */ }
+async function liveFinish(conv, stats) {
+  const lo = liveOf(conv);
+  if (!lo) return;
+  liveEmit(conv, 'turnEnd', stats || {});
+  liveFlush(lo);
+  liveOuts.delete(lo.sid);
+  try { await exa.liveEnd(lo.sid); } catch { /* 무시 */ }
 }
 
 /** 지금 보고 있는 대화가 Code 세션이면 그 세션의 실시간 통로를 지켜본다. */
@@ -350,6 +366,7 @@ const persistPending = new Map(); // 대화 id -> 저장을 기다리는 대화 
 async function saveNow(conv) {
   // 터미널이 이 세션에서 작업 중이면 기록 파일은 터미널이 쓴다 (따라 그리던 내용으로 덮어쓰지 않는다).
   if (S.remote && S.remote.conv === conv) return;
+  if (conv._deleted) return; // 지운 대화 (진행 중이던 작업이 끝나며 다시 저장하려는 경우)
   const copy = { ...conv, messages: conv.messages.map((m) => { const { streaming, notice, ...rest } = m; return rest; }) };
   try {
     const r = await exa.saveConv(copy);
@@ -361,7 +378,7 @@ async function saveNow(conv) {
   renderConvList();
 }
 function persist(conv, immediate) {
-  if (!conv || !conv.messages.length) return;
+  if (!conv || conv._deleted || !conv.messages.length) return;
   conv.updatedAt = Date.now();
   clearTimeout(persistTimers.get(conv.id));
   persistTimers.delete(conv.id);
@@ -552,26 +569,28 @@ function buildBody(conv) {
 
 // ---------- 실행 루프 ----------
 let busyTicker = null;
-function setBusy(b) {
-  S.busy = b;
-  document.body.classList.toggle('busy', b);
+/** 실행 상태가 바뀌었을 때(시작 · 끝 · 다른 대화로 이동) 화면을 맞춘다. */
+function syncBusy() {
+  document.body.classList.toggle('busy', S.busy || !!S.remote);
   renderSendButton();
-  // 작업 중에는 1초마다 경과 시간(생각·도구 실행)을 갱신한다.
-  clearInterval(busyTicker);
-  busyTicker = b ? setInterval(() => {
-    const conv = S.run && S.run.conv;
-    const last = conv && S.conv === conv ? lastAssistant(conv) : null;
-    if (last) updateAssistant(last);
-  }, 1000) : null;
+  // 작업 중에는 1초마다 지금 보고 있는 대화의 경과 시간(생각·도구 실행)을 갱신한다.
+  if (S.runs.size && !busyTicker) {
+    busyTicker = setInterval(() => {
+      const last = S.run ? lastAssistant(S.run.conv) : null;
+      if (last) updateAssistant(last);
+    }, 1000);
+  } else if (!S.runs.size && busyTicker) { clearInterval(busyTicker); busyTicker = null; }
 }
 
 async function runTurn(conv) {
-  if (S.busy) return;
-  const run = S.run = { conv, aborted: false, reqId: null, t0: Date.now() };
-  setBusy(true);
+  if (S.runs.has(conv.id)) return;
+  const run = { conv, aborted: false, reqId: null, t0: Date.now() };
+  S.runs.set(conv.id, run);
+  syncBusy();
+  renderConvList();
   try {
     // Code 세션: 같은 세션을 보고 있는 터미널이 따라 그릴 수 있게 알린다 (send 에서 이미 시작했으면 그대로).
-    if (conv.code && !liveOut.sid) {
+    if (conv.code && !liveOf(conv)) {
       let lastUser = null;
       for (let i = conv.messages.length - 1; i >= 0; i--) if (conv.messages[i].role === 'user') { lastUser = conv.messages[i]; break; }
       await liveStart(conv, lastUser ? lastUser.content : '');
@@ -584,7 +603,7 @@ async function runTurn(conv) {
       conv.messages.push(asst);
       refreshFooters();
       updateAssistant(asst);
-      scrollToBottom();
+      if (S.conv === conv) scrollToBottom();
       const r = await streamAssistant(run, conv, asst);
       persist(conv);
       if (!r.ok || !asst.toolCalls.length) break;
@@ -603,8 +622,8 @@ async function runTurn(conv) {
     console.error(e);
     toast(String(e && e.message || e), 'err');
   } finally {
-    S.run = null;
-    setBusy(false);
+    S.runs.delete(conv.id);
+    syncBusy();
     // 작업이 끝났음을 알린다 (사용자가 직접 멈춘 경우는 빼고).
     if (!run.aborted) {
       const lastMsg = conv.messages[conv.messages.length - 1];
@@ -612,13 +631,19 @@ async function runTurn(conv) {
         if (lastMsg.error) notify(conv, 'error', '오류로 멈췄습니다: ' + lastMsg.error);
         else notify(conv, 'done', (viewOf(lastMsg).content || '작업을 마쳤습니다').replace(/[#*`>]/g, ''));
       }
+      // 다른 대화를 보는 사이에 끝났으면 사이드바에 표시하고 알려 준다.
+      if (S.conv !== conv) {
+        S.unseen.add(conv.id);
+        toast(`"${conv.title || '새 대화'}" ${lastMsg && lastMsg.error ? '작업이 오류로 멈췄습니다' : '응답이 끝났습니다'}`, lastMsg && lastMsg.error ? 'err' : '');
+      }
     }
+    renderConvList();
     refreshProgressPanel();
     if (conv.mode === 'agent') attachTurnChanges(conv);
     refreshChangesPanel();
     refreshFooters();
     renderChrome();
-    if (liveOut.sid) {
+    if (liveOf(conv)) {
       // 기록 파일을 먼저 저장한 뒤에 "끝났다" 고 알린다 (터미널이 곧바로 그 파일을 읽는다).
       let from = 0;
       for (let i = conv.messages.length - 1; i >= 0; i--) if (conv.messages[i].role === 'user') { from = i; break; }
@@ -631,7 +656,7 @@ async function runTurn(conv) {
         reasoning: sum((u) => (u.reasoning_tokens != null ? u.reasoning_tokens : (u.completion_tokens_details || {}).reasoning_tokens)),
       };
       try { await persist(conv, true); } catch (e) { console.error(e); }
-      await liveFinish(stats);
+      await liveFinish(conv, stats);
     } else persist(conv);
   }
 }
@@ -761,7 +786,7 @@ async function compactConv(run, conv, { auto = false, instructions = '' } = {}) 
     max_tokens: COMPACT_RESERVE,
   };
   const before = ctxUsed();
-  liveEmit('compactStart');
+  liveEmit(conv, 'compactStart');
   const marker = { id: uid('m'), role: 'compact', ts: Date.now(), auto, running: true, summary: '', before };
   conv.messages.splice(end, 0, marker);
   if (S.conv === conv) renderConv();
@@ -778,10 +803,10 @@ async function compactConv(run, conv, { auto = false, instructions = '' } = {}) 
       compactFails.set(conv.id, n);
       toast('대화 압축 실패: ' + (r.error || '요약이 비어 있습니다') + (auto && n >= COMPACT_MAX_FAILS ? ` — ${n}번 연달아 실패해 이 대화에서는 자동 압축을 멈춥니다 (/compact 로 직접 실행 가능)` : ''), 'err');
     }
-    liveEmit('compactEnd', { error: r.error || '중단됨' });
+    liveEmit(conv, 'compactEnd', { error: r.error || '중단됨' });
     return { error: r.error || 'aborted' };
   }
-  liveEmit('compactEnd', { before: end });
+  liveEmit(conv, 'compactEnd', { before: end });
   compactFails.delete(conv.id);
   marker.running = false;
   marker.summary = text;
@@ -796,15 +821,16 @@ async function compactConv(run, conv, { auto = false, instructions = '' } = {}) 
 async function compactNow(instructions) {
   const conv = S.conv;
   if (!conv || S.busy) return;
-  const run = S.run = { conv, aborted: false, reqId: null };
-  setBusy(true);
+  const run = { conv, aborted: false, reqId: null };
+  S.runs.set(conv.id, run);
+  syncBusy();
   try {
     const r = await compactConv(run, conv, { instructions });
     if (r.skipped) toast('압축할 대화가 없습니다');
     else if (r.ok) toast('이전 대화를 요약으로 압축했습니다');
   } finally {
-    S.run = null;
-    setBusy(false);
+    S.runs.delete(conv.id);
+    syncBusy();
     renderChrome();
   }
 }
@@ -859,7 +885,7 @@ function streamAssistant(run, conv, asst) {
     let attempt = 0;
     let ticker = null;
     let raf = 0;
-    const schedule = () => { if (!raf) raf = setTimeout(() => { raf = 0; updateAssistant(asst); stickBottom(); }, 60); };
+    const schedule = () => { if (!raf) raf = setTimeout(() => { raf = 0; updateAssistant(asst); if (S.conv === conv) stickBottom(); }, 60); };
 
     const start = () => {
       const reqId = uid('r');
@@ -872,13 +898,13 @@ function streamAssistant(run, conv, asst) {
       const first = () => { if (asst.stats.ttftMs == null) asst.stats.ttftMs = Math.round(performance.now() - t0); };
       // 같은 세션을 보는 터미널에 알릴 사건의 진행 상태
       const lv = { think: false, thinkDone: false, content: false, contentDone: false, tools: new Set() };
-      const lvEndThink = () => { if (lv.think && !lv.thinkDone) { lv.thinkDone = true; liveEmit('thinkingEnd', asst.stats.thinkStart ? Math.round(performance.now() - asst.stats.thinkStart) : 0, asst.reasoning); } };
-      const lvEndContent = () => { if (lv.content && !lv.contentDone) { lv.contentDone = true; liveEmit('contentEnd'); } };
+      const lvEndThink = () => { if (lv.think && !lv.thinkDone) { lv.thinkDone = true; liveEmit(conv, 'thinkingEnd', asst.stats.thinkStart ? Math.round(performance.now() - asst.stats.thinkStart) : 0, asst.reasoning); } };
+      const lvEndContent = () => { if (lv.content && !lv.contentDone) { lv.contentDone = true; liveEmit(conv, 'contentEnd'); } };
       ticker = setInterval(() => { if (asst.streaming) updateAssistant(asst); }, 1000);
 
       chatHandlers.set(reqId, (ev) => {
         switch (ev.type) {
-          case 'request': log.url = ev.url; liveEmit('requestStart'); break;
+          case 'request': log.url = ev.url; liveEmit(conv, 'requestStart'); break;
           case 'response':
             log.status = ev.status; log.headers = ev.headers || {};
             asst.stats.latencyMs = ev.latencyMs;
@@ -888,16 +914,16 @@ function streamAssistant(run, conv, asst) {
             first();
             if (!asst.reasoning) asst.stats.thinkStart = performance.now();
             asst.reasoning += ev.text;
-            if (!lv.think) { lv.think = true; liveEmit('thinkingStart'); }
-            liveEmit('reasoning', ev.text);
+            if (!lv.think) { lv.think = true; liveEmit(conv, 'thinkingStart'); }
+            liveEmit(conv, 'reasoning', ev.text);
             schedule();
             break;
           case 'content':
             first();
             if (!asst.content && asst.stats.thinkStart && !asst.stats.thinkEnd) asst.stats.thinkEnd = performance.now();
             asst.content += ev.text;
-            if (!lv.content) { lvEndThink(); lv.content = true; liveEmit('contentStart'); }
-            liveEmit('content', ev.text);
+            if (!lv.content) { lvEndThink(); lv.content = true; liveEmit(conv, 'contentStart'); }
+            liveEmit(conv, 'content', ev.text);
             schedule();
             break;
           case 'tool_call': {
@@ -907,7 +933,7 @@ function streamAssistant(run, conv, asst) {
             if (!tc) tc = asst.toolCalls[ev.index] = { id: ev.id || uid('call_'), name: '', arguments: '' };
             if (ev.name && !tc.name) tc.name = ev.name;
             if (ev.args) tc.arguments += ev.args;
-            if (tc.name && !lv.tools.has(ev.index)) { lv.tools.add(ev.index); lvEndThink(); lvEndContent(); liveEmit('toolBuilding', { name: tc.name }); }
+            if (tc.name && !lv.tools.has(ev.index)) { lv.tools.add(ev.index); lvEndThink(); lvEndContent(); liveEmit(conv, 'toolBuilding', { name: tc.name }); }
             schedule();
             break;
           }
@@ -939,7 +965,7 @@ function streamAssistant(run, conv, asst) {
             if (wait != null) {
               attempt++;
               const info = { attempt, max: maxRetries(), reason: Retry.reason(err) };
-              liveEmit('retryWait', wait, info);
+              liveEmit(conv, 'retryWait', wait, info);
               // 받다 만 내용은 버리고 처음부터 다시 받는다.
               asst.content = ''; asst.reasoning = ''; asst.toolCalls = []; asst.usage = null; asst.finish = null;
               const el = msgEls.get(asst.id);
@@ -997,11 +1023,11 @@ function streamAssistant(run, conv, asst) {
           asst.error = '모델이 추론만 하고 답변이나 도구 호출 없이 끝났습니다' + (asst.finish ? ` (finish_reason: ${asst.finish})` : '') + '. 다시 생성하거나 추론 강도를 바꿔 보세요.';
         }
       }
-      if (aborted) liveEmit('interrupted'); else if (asst.error) liveEmit('error', asst.error);
+      if (aborted) liveEmit(conv, 'interrupted'); else if (asst.error) liveEmit(conv, 'error', asst.error);
       const el = msgEls.get(asst.id);
       if (el) { for (const card of el._cards) card.remove(); el._cards = []; regroupSig = ''; }
       updateAssistant(asst);
-      renderCtxMeter();
+      if (S.conv === conv) renderCtxMeter();
       resolve({ ok: !err && !aborted && !cut && asst.finish !== 'length' });
     };
 
@@ -1068,9 +1094,15 @@ async function execToolCall(run, conv, asst, tc) {
   const args = tryJson(tc.arguments || '{}');
   const def = conv.mode === 'agent' ? S.toolDefs.find((t) => t.name === tc.name) : null;
   const custom = S.settings.customTools.enabled && parseCustomTools().some((t) => t.function.name === tc.name);
-  const st = { status: 'pending', live: '' };
+  const st = { status: 'pending', live: '', run, conv };
   toolState.set(tc.id, st);
-  const wait = () => new Promise((res) => { st.resolve = res; updateAssistant(asst); stickBottom(); });
+  // 사용자의 확인(승인 · 질문 · 입력)을 기다린다. 다른 대화를 보고 있으면 사이드바에 "확인 대기" 로 표시된다.
+  const wait = () => new Promise((res) => {
+    st.resolve = (v) => { res(v); renderConvList(); };
+    updateAssistant(asst);
+    if (S.conv === conv) stickBottom();
+    renderConvList();
+  });
   let result;
 
   if (args === undefined || args === null || typeof args !== 'object') {
@@ -1082,10 +1114,10 @@ async function execToolCall(run, conv, asst, tc) {
     else {
       st.status = 'ask';
       st.questions = qs;
-      liveEmit('wait', 'ask');
+      liveEmit(conv, 'wait', 'ask');
       notify(conv, 'ask', qs[0] && qs[0].question ? qs[0].question : '답변을 기다리고 있습니다');
       const ans = await wait();
-      liveEmit('waitEnd');
+      liveEmit(conv, 'waitEnd');
       if (ans == null) result = { ok: false, skipped: true, content: '(실행되지 않음: 사용자가 중단함)' };
       else if (ans === 'skip') result = { ok: true, content: S.askUser.skipped || 'The user skipped the questions. Proceed with reasonable defaults.', meta: { questions: qs, skippedAsk: true } };
       else result = { ok: true, content: askFormat(qs, ans), meta: { questions: qs, answers: ans, answer: ans.join(' · ') } };
@@ -1096,10 +1128,10 @@ async function execToolCall(run, conv, asst, tc) {
     } else {
       if (needsApproval(def, conv)) {
         st.status = 'approval';
-        liveEmit('wait', 'approval');
+        liveEmit(conv, 'wait', 'approval');
         { const d = describeTool(tc, args && typeof args === 'object' ? args : {}); notify(conv, 'approval', `${d.title}${d.sub ? ' — ' + d.sub : ''} · 승인을 기다리고 있습니다`); }
         const decision = await wait();
-        liveEmit('waitEnd');
+        liveEmit(conv, 'waitEnd');
         if (decision === 'always') S.sessionAllow.add(conv.id + ':' + def.category);
         if (decision === 'abort') result = { ok: false, skipped: true, content: '(실행되지 않음: 사용자가 중단함)' };
         else if (decision === 'deny') result = { ok: false, denied: true, content: '사용자가 이 작업을 거부했습니다. 같은 호출을 반복하지 말고, 다른 방법을 제안하거나 사용자에게 물어보세요.' };
@@ -1108,7 +1140,7 @@ async function execToolCall(run, conv, asst, tc) {
         st.status = 'running';
         st.startedAt = Date.now();
         updateAssistant(asst);
-        liveEmit('toolStart', { id: tc.id, name: tc.name }, args);
+        liveEmit(conv, 'toolStart', { id: tc.id, name: tc.name }, args);
         try { result = await exa.runTool({ callId: tc.id, name: tc.name, args, workspace: conv.workspace, convId: conv.id }); }
         catch (e) { result = { ok: false, content: '오류: ' + (e && e.message || e) }; }
       }
@@ -1121,7 +1153,7 @@ async function execToolCall(run, conv, asst, tc) {
     result = { ok: false, content: `오류: "${tc.name}" 는 사용할 수 없는 도구입니다.` };
   }
 
-  liveEmit('toolEnd', { id: tc.id, name: tc.name }, args && typeof args === 'object' ? args : {},
+  liveEmit(conv, 'toolEnd', { id: tc.id, name: tc.name }, args && typeof args === 'object' ? args : {},
     { ok: !!result.ok, content: String(result.content == null ? '' : result.content), meta: result.meta || {}, rejected: !!result.denied, display: result.denied ? '거부함' : undefined });
   conv.messages.push({
     id: uid('m'), role: 'tool', toolCallId: tc.id, name: tc.name, content: String(result.content == null ? '' : result.content),
@@ -1129,8 +1161,8 @@ async function execToolCall(run, conv, asst, tc) {
   });
   toolState.delete(tc.id);
   updateAssistant(asst);
-  stickBottom();
-  if (result.ok && (tc.name === 'write_file' || tc.name === 'edit_file')) {
+  if (S.conv === conv) stickBottom();
+  if (result.ok && (tc.name === 'write_file' || tc.name === 'edit_file') && S.conv === conv) {
     refreshChangesPanel();
     refreshFilesPanel();
     if (result.meta && result.meta.path) autoPreview(run, conv, result.meta.path);
@@ -1192,17 +1224,26 @@ async function attachTurnChanges(conv) {
   if (!last || !changed.length) return;
   last.changes = changed;
   updateAssistant(last);
-  stickBottom();
+  if (S.conv === conv) stickBottom();
   persist(conv);
 }
 
-function stopRun() {
-  const run = S.run;
+/** 작업을 멈춘다. run 을 주지 않으면 지금 보고 있는 대화의 작업. */
+/** 대화를 지울 때: 진행 중인 작업을 멈추고, 끝나면서 다시 저장되지 않게 표시해 둔다. */
+function stopRunOf(id) {
+  const r = S.runs.get(id);
+  if (!r) return;
+  r.conv._deleted = true;
+  stopRun(r);
+}
+
+function stopRun(run = S.run) {
   if (!run) return;
   run.aborted = true;
   if (run.cancelWait) run.cancelWait(); // 다시 시도를 기다리는 중이었으면 바로 끝낸다
   if (run.reqId) exa.chatAbort(run.reqId);
   for (const [id, st] of toolState) {
+    if (st.run !== run) continue; // 다른 대화의 작업은 건드리지 않는다
     if (st.status === 'running') exa.cancelTool(id);
     else if (st.resolve) { const r = st.resolve; st.resolve = null; r(st.status === 'input' || st.status === 'ask' ? null : 'abort'); }
   }
@@ -2043,7 +2084,7 @@ const SLASH = [
   { cmd: '/clear', desc: '현재 대화의 메시지 모두 지우기', run: async () => {
     if (!S.conv.messages.length) return;
     if (!await confirmDialog('현재 대화의 메시지를 모두 지울까요?', '지우기', true)) return;
-    if (S.busy) stopRun();
+    stopRunOf(S.conv.id);
     const pid = S.conv.projectId;
     await exa.deleteConv(S.conv.id);
     S.convs = await exa.listConvs();
@@ -2191,6 +2232,7 @@ async function send() {
     if (proj && !proj.path) updateProject(proj.id, { path: conv.workspace });
   }
   if (!conv.title) conv.title = makeTitle(text || (m.attachments[0] && m.attachments[0].name) || '');
+  if (S.conv !== conv) { persist(conv, true); runTurn(conv); return; } // 확인 창 등을 기다리는 사이 다른 대화로 옮겼다: 화면은 그대로 두고 작업만 시작
   inp.value = '';
   autosize();
   renderSlash();
@@ -2207,6 +2249,20 @@ async function send() {
   scrollToBottom();
   persist(conv, true);
   await runTurn(conv);
+}
+
+/** 사이드바 표시: 응답 중 · 확인 대기(승인 · 질문) · 새 응답(다른 화면을 보는 사이에 끝남) */
+function convRunState(id) {
+  const run = S.runs.get(id);
+  if (run) {
+    for (const st of toolState.values()) if (st.run === run && st.resolve && ['approval', 'ask', 'input'].includes(st.status)) return 'wait';
+    return 'running';
+  }
+  return S.unseen.has(id) ? 'done' : '';
+}
+function runDot(id) {
+  const st = convRunState(id);
+  return st ? h('span', { class: 'run-dot ' + st, title: { running: '응답 중', wait: '확인을 기다리는 중', done: '새 응답' }[st] }) : null;
 }
 
 // ---------- 내보내기 ----------

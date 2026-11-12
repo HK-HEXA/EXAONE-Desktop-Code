@@ -27,12 +27,12 @@
     const st = toolState.get(callId);
     if (!st) return;
     st.live = (st.live + chunk).slice(-20000);
-    liveEmit('toolOutput', chunk);
+    liveEmit(st.conv, 'toolOutput', chunk);
     if (st.timer) return;
     st.timer = setTimeout(() => {
       st.timer = null;
       const conv = S.conv;
-      if (!conv) return;
+      if (!conv || (st.conv && st.conv !== conv)) return; // 다른 대화의 작업이면 그 대화를 열 때 그린다
       for (let i = conv.messages.length - 1; i >= 0; i--) {
         const m = conv.messages[i];
         if (m.role === 'assistant' && (m.toolCalls || []).some((tc) => tc.id === callId)) { updateAssistant(m); stickBottom(); break; }
@@ -219,7 +219,7 @@
   // 터미널에서 세션에 글이 쌓이는 즉시 반영한다: 파일 변경 알림 + (알림을 못 받는 환경을 위한) 짧은 주기의 확인
   exa.onCliChanged(() => refreshCliSessions(true));
   exa.onLiveEvents(({ sid, events }) => onLiveEvents(sid, events));
-  exa.onLiveStop(({ sid }) => { if (S.busy && S.run && S.run.conv.code && S.run.conv.code.id === sid) stopRun(); });
+  exa.onLiveStop(({ sid }) => { for (const r of S.runs.values()) if (r.conv.code && r.conv.code.id === sid) stopRun(r); });
   setInterval(() => { if (S.conv && S.conv.code && !S.busy && S.view === 'chat') syncCodeConv(); }, 1500);
   exa.onTokenRequest(() => openTokenDialog());
   // 자동 업데이트(Windows 설치판): 새 버전을 받아 두면 사이드바에 '재시작하여 업데이트' 버튼이 뜬다.
@@ -228,8 +228,7 @@
   // 알림을 누르면 그 대화를 연다.
   exa.onNotifyClick(({ convId }) => {
     if (!convId || (S.conv && S.conv.id === convId)) { setView('chat'); return; }
-    if (S.busy) return; // 다른 작업이 진행 중이면 화면을 바꾸지 않는다
-    openConv(convId).catch(() => {});
+    openConv(convId).catch(() => {}); // 진행 중인 작업은 다른 대화로 옮겨도 이어진다
   });
   refreshCliBin().then(() => { if (S.conv && S.conv.code && !S.conv.messages.length) renderConv(); }); // 터미널(EXAONE Code)이 토큰 등록을 요청했을 때
 

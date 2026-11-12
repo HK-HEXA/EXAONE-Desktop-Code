@@ -451,6 +451,7 @@ function fillHomeTasks(box, proj) {
       h('button', { class: 'icon-btn sm danger', title: '삭제', onclick: async (e) => {
         e.stopPropagation();
         if (!await confirmDialog(`"${c.title || '새 대화'}" 대화를 삭제할까요?`, '삭제', true)) return;
+        stopRunOf(c.id);
         await exa.deleteConv(c.id);
         S.convs = await exa.listConvs();
         renderConvList();
@@ -514,6 +515,7 @@ function convItem(c, nested) {
   },
   c.mode === 'agent' ? h('span', { class: 'conv-ic', title: '에이전트 작업' }, icon('bolt', 13)) : null,
   title,
+  runDot(c.id),
   h('span', { class: 'conv-acts' },
     projects.length ? h('button', { class: 'icon-btn sm', title: '프로젝트로 이동', onclick: (e) => {
       e.stopPropagation();
@@ -524,6 +526,7 @@ function convItem(c, nested) {
     h('button', { class: 'icon-btn sm danger', title: '삭제', onclick: async (e) => {
       e.stopPropagation();
       if (!await confirmDialog(`"${c.title || '새 대화'}" 대화를 삭제할까요?`, '삭제', true)) return;
+      stopRunOf(c.id);
       await exa.deleteConv(c.id);
       S.convs = await exa.listConvs();
       if (S.conv && S.conv.id === c.id) newConv(c.projectId); else renderConvList();
@@ -659,12 +662,14 @@ function codeItem(s) {
   },
   h('span', { class: 'conv-ic' }, icon('terminal', 13)),
   h('span', { class: 'conv-title', text: s.title }),
+  runDot(id),
   h('small', { class: 'cli-dir', text: s.cwd ? baseName(s.cwd) : '' }),
   h('span', { class: 'conv-acts' },
     h('button', { class: 'icon-btn sm', title: '터미널에서 열기 (exaone --resume)', onclick: (e) => { e.stopPropagation(); openCliInTerminal(s); } }, icon('ext', 13)),
     h('button', { class: 'icon-btn sm danger', title: '삭제', onclick: async (e) => {
       e.stopPropagation();
       if (!await confirmDialog(`"${s.title}" 세션을 삭제할까요? 터미널의 EXAONE Code 에서도 사라집니다.`, '삭제', true)) return;
+      stopRunOf(id);
       await exa.deleteConv(id);
       if (S.conv && S.conv.id === id) newConv();
       refreshCliSessions(true);
